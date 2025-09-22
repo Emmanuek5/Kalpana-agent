@@ -127,6 +127,9 @@ export function getToolStartMessage(
       return `🔄 Restarting container ${chalk.cyan(
         (arg.containerId || "container").substring(0, 12)
       )} with new ports`;
+    case "docker.getContainers":
+      const filterText = arg.all ? " (including stopped)" : " (running only)";
+      return `📋 Listing Docker containers${filterText}`;
     // Puppeteer Browser
     case "browser.runPuppeteerScript":
       return `🌐 Running Puppeteer script in sandbox`;
@@ -492,6 +495,17 @@ export function getToolCompletionMessage(
         )}`;
       }
       return `❌ Failed to stop container`;
+    case "docker.getContainers":
+      if (result?.success && result?.containers) {
+        const count = result.containers.length;
+        const runningCount = result.containers.filter((c: any) => c.state === 'running').length;
+        const stoppedCount = count - runningCount;
+        const summary = arg.all 
+          ? `${runningCount} running, ${stoppedCount} stopped`
+          : `${runningCount} running`;
+        return `✅ Found ${count} container(s) - ${chalk.gray(summary)}`;
+      }
+      return `❌ Failed to list containers`;
     case "docker.getCurrentContainer":
       if (result?.id) {
         return `✅ Current container: ${chalk.gray(

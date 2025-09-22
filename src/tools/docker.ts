@@ -31,6 +31,21 @@ import { URL } from "node:url";
  *    - Start container on specific network: { network: "myapp-network" } in startContainer options
  */
 
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  state: string;
+  ports: Array<{
+    hostPort?: number;
+    containerPort: number;
+    protocol: string;
+  }>;
+  networks: string[];
+  created: string;
+}
+
 export interface StartContainerInput {
   image: string;
   cmd?: string[];
@@ -680,4 +695,54 @@ export async function stopAllManagedContainers(options?: {
     }
   }
   return { stopped };
+}
+
+export async function getContainers(options?: {
+  all?: boolean;
+  filters?: Record<string, string[]>;
+}): Promise<{ success: boolean; containers?: ContainerInfo[]; error?: string }> {
+  try {
+    const docker = getDockerClient();
+    const containers = await docker.listContainers({
+      all: options?.all ?? false,
+      filters: options?.filters
+    });
+
+    const containerInfos: ContainerInfo[] = containers.map((container) => {
+      // Extract port information
+      const ports = (container.Ports || []).map((port) => ({
+        hostPort: port.PublicPort,
+        containerPort: port.PrivatePort,
+        protocol: port.Type || 'tcp'
+      }));
+
+      // Extract network information
+      const networks = Object.keys(container.NetworkSettings?.Networks || {});
+
+      // Get container name (remove leading slash)
+      const name = (container.Names?.[0] || '').replace(/^\//, '');
+
+      return {
+        id: container.Id,
+        name,
+        image: container.Image,
+        status: container.Status,
+        state: container.State,
+        ports,
+        networks,
+        created: new Date(container.Created * 1000).toISOString()
+      };
+    });
+
+    return {
+      success: true,
+      containers: containerInfos
+    };
+  } catch (error: any) {
+    dlog("getContainers error:", error);
+    return {
+      success: false,
+      error: `Failed to get containers: ${error.message}`
+    };
+  }
 }

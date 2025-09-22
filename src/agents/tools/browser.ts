@@ -10,7 +10,7 @@ export function buildBrowserTools() {
       { success: boolean; output: string; error?: string }
     >({
       description:
-        "Execute a Puppeteer script directly from the host. Can access localhost applications running in containers (ports are mirrored) and external websites. Write complete Puppeteer scripts with browser automation logic.",
+        "Execute a Puppeteer script with browser, page, and puppeteer objects available. Can access localhost applications running in containers (ports are mirrored) and external websites. Use page.goto(), page.type(), page.click(), etc. Browser is automatically launched and closed.",
       inputSchema: zodSchema(
         z.object({
           script: z.string().describe("Complete Puppeteer script to execute"),

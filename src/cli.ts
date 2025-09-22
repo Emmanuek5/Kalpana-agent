@@ -12,6 +12,43 @@ import {
 import { formatResponse } from "./markdown";
 import fs from "node:fs/promises";
 
+// Global error handlers to prevent application crashes
+process.on('uncaughtException', (error) => {
+  console.error(chalk.red('🚨 Uncaught Exception:'), error.message);
+  console.error(chalk.gray('Stack:'), error.stack);
+  console.log(chalk.yellow('⚠️  Application continuing despite error...'));
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error(chalk.red('🚨 Unhandled Promise Rejection:'), reason);
+  console.error(chalk.gray('Promise:'), promise);
+  console.log(chalk.yellow('⚠️  Application continuing despite error...'));
+});
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  console.log(chalk.yellow('\n🛑 Received SIGINT, shutting down gracefully...'));
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log(chalk.yellow('\n🛑 Received SIGTERM, shutting down gracefully...'));
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+async function gracefulShutdown() {
+  try {
+    console.log(chalk.blue('🧹 Cleaning up resources...'));
+    await cleanupAgent();
+    await shutdownSandbox();
+    console.log(chalk.green('✅ Cleanup completed'));
+  } catch (error) {
+    console.error(chalk.red('❌ Error during cleanup:'), error);
+  }
+}
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -229,12 +266,25 @@ async function main() {
     try {
       console.log(chalk.gray("Thinking..."));
 
-      const { text, messages } = await runAgent(input, history);
+      const { text, messages } = await runAgent(input, history).catch((agentError) => {
+        console.error(chalk.red('🚨 Agent execution error:'), agentError.message);
+        console.error(chalk.gray('Stack:'), agentError.stack);
+        
+        // Return a fallback response instead of crashing
+        return {
+          text: `❌ **Agent Error**: ${agentError.message}\n\n⚠️ The agent encountered an error but the application is still running. You can try your request again or ask for help.`,
+          messages: history // Keep existing history
+        };
+      });
 
       history.splice(0, history.length, ...messages);
 
       if (saveHistory) {
-        await persistHistory();
+        try {
+          await persistHistory();
+        } catch (historyError: any) {
+          console.warn(chalk.yellow('⚠️ Failed to save history:'), historyError.message);
+        }
       }
 
       // Format and display the response

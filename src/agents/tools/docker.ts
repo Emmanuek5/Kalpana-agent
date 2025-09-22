@@ -10,6 +10,7 @@ import {
   listNetworks,
   createNetwork,
   restartContainerWithPorts,
+  getContainers,
 } from "../../tools/docker";
 import { createSafeToolWrapper } from "../safeToolWrapper";
 import { getSandboxInfo } from "../../sandbox";
@@ -194,6 +195,28 @@ export function buildDockerTools() {
         "docker.restartWithPorts",
         restartContainerWithPorts as any
       ),
+    }),
+
+    "docker.getContainers": tool<
+      {
+        all?: boolean;
+        filters?: Record<string, string[]>;
+      },
+      {
+        success: boolean;
+        containers?: import("../../tools/docker").ContainerInfo[];
+        error?: string;
+      }
+    >({
+      description:
+        "List Docker containers. By default shows only running containers. Use 'all: true' to include stopped containers.",
+      inputSchema: zodSchema(
+        z.object({
+          all: z.boolean().optional().describe("Include stopped containers (default: false)"),
+          filters: z.record(z.string(), z.array(z.string())).optional().describe("Docker filters (e.g., {'status': ['running']})"),
+        })
+      ),
+      execute: createSafeToolWrapper("docker.getContainers", getContainers as any),
     }),
   } as const;
 }
