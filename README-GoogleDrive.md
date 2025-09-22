@@ -25,7 +25,7 @@ This guide explains how to set up Google Drive integration for the AI Container 
 3. Choose "Desktop application" as the application type
 4. Set the name (e.g., "AI Container Google Drive")
 5. Add authorized redirect URIs:
-   - `http://localhost:3000/oauth/callback`
+   - `http://localhost:44565/oauth/callback`
 6. Download the credentials JSON file
 
 ### 3. Configure Environment Variables
@@ -36,7 +36,7 @@ Add the following environment variables to your `.env` file:
 # Google Drive OAuth Configuration
 GOOGLE_CLIENT_ID=your_client_id_here
 GOOGLE_CLIENT_SECRET=your_client_secret_here
-GOOGLE_REDIRECT_URI=http://localhost:3000/oauth/callback
+GOOGLE_REDIRECT_URI=http://localhost:44565/oauth/callback
 
 # Optional: Custom model for file summarization
 SUB_AGENT_MODEL_ID=openai/gpt-4o-mini
@@ -67,7 +67,7 @@ pDrive.linkAccount
 ```
 
 This will:
-- Start a callback server on port 3000
+- Start a callback server on port 44565
 - Provide you with an authorization URL
 - Open the URL in your browser to authorize access
 - Automatically handle the token exchange
@@ -121,7 +121,7 @@ pDrive.unlinkAccount
   - `https://www.googleapis.com/auth/drive` - Full Google Drive access
   - `https://www.googleapis.com/auth/drive.file` - Access to files created by the app
   - `https://www.googleapis.com/auth/userinfo.email` - User email for identification
-- **Local Server**: OAuth callback runs on localhost:3000 temporarily during auth
+- **Local Server**: OAuth callback runs on localhost:44565 temporarily during auth
 
 ## Troubleshooting
 
@@ -134,8 +134,8 @@ pDrive.unlinkAccount
    - Ensure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `.env`
 
 3. **"Authorization failed"**
-   - Check that redirect URI matches exactly: `http://localhost:3000/oauth/callback`
-   - Ensure port 3000 is not in use by other applications
+   - Check that redirect URI matches exactly: `http://localhost:44565/oauth/callback`
+   - Ensure port 44565 is not in use by other applications
 
 4. **"Token expired"**
    - Delete `.gdrive-token.json` and run `pDrive.linkAccount` again

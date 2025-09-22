@@ -5,4 +5,4 @@
  * This file is the entry point when kalpana is installed globally
  */
 
-import "../cli.ts";
+import "../cli.js";

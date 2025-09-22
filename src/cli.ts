@@ -1,15 +1,15 @@
 import "dotenv/config";
 import readline from "node:readline";
 import chalk from "chalk";
-import { runAgent, cleanup as cleanupAgent } from "./agents";
-import { mcpManager } from "./mcp";
+import { runAgent, cleanup as cleanupAgent } from "./agents/index.js";
+import { mcpManager } from "./mcp.js";
 import type { ModelMessage } from "ai";
-import { launchSandbox, shutdownSandbox } from "./sandbox";
+import { launchSandbox, shutdownSandbox } from "./sandbox.js";
 import {
   verifyDockerConnection,
   stopAllManagedContainers,
-} from "./tools/docker";
-import { formatResponse } from "./markdown";
+} from "./tools/docker.js";
+import { formatResponse } from "./markdown.js";
 import fs from "node:fs/promises";
 import { loadEnvironment, validateConfig, configExists } from "./config.js";
 
@@ -88,22 +88,6 @@ function parseSandboxPath(): string {
 }
 
 async function main() {
-  // Handle config commands before anything else
-  if (process.argv[2] === 'config') {
-    const { spawn } = await import('node:child_process');
-    const configArgs = process.argv.slice(3);
-    const configProcess = spawn(process.execPath, [
-      require.resolve('./config-cli.js')
-    ].concat(configArgs), {
-      stdio: 'inherit'
-    });
-    
-    configProcess.on('exit', (code) => {
-      process.exit(code || 0);
-    });
-    return;
-  }
-
   // Load global configuration
   await loadEnvironment();
   
@@ -111,8 +95,8 @@ async function main() {
   const hasConfig = await configExists();
   if (!hasConfig) {
     console.log(chalk.yellow('⚠️  No configuration found.'));
-    console.log('Run ' + chalk.cyan('kalpana config setup') + ' to configure Kalpana with your API keys.');
-    console.log('Or run ' + chalk.cyan('kalpana config --help') + ' for more options.');
+    console.log('Run ' + chalk.cyan('kalpana-config setup') + ' to configure Kalpana with your API keys.');
+    console.log('Or run ' + chalk.cyan('kalpana-config --help') + ' for more options.');
     process.exit(1);
   }
   
@@ -124,7 +108,7 @@ async function main() {
       console.log(`  - ${key}`);
     });
     console.log('');
-    console.log('Run ' + chalk.cyan('kalpana config setup') + ' to complete configuration.');
+    console.log('Run ' + chalk.cyan('kalpana-config setup') + ' to complete configuration.');
     process.exit(1);
   }
 
@@ -322,7 +306,6 @@ async function main() {
         "  /processes   - List all processes in container (/ps for short)"
       );
       console.log("  /mcp         - Show MCP server status");
-      console.log("  /config      - Show configuration management help");
       console.log("  /help        - Show this help message");
       console.log("");
       console.log(chalk.cyan("CLI Options:"));
@@ -335,10 +318,10 @@ async function main() {
       console.log("  --save-history      - Save conversation history");
       console.log("");
       console.log(chalk.cyan("Configuration Management:"));
-      console.log("  kalpana config setup            - Interactive setup wizard");
-      console.log("  kalpana config show             - Display current config");
-      console.log("  kalpana config set <key> <val>  - Set configuration value");
-      console.log("  kalpana config get <key>        - Get configuration value");
+      console.log("  kalpana-config setup            - Interactive setup wizard");
+      console.log("  kalpana-config show             - Display current config");
+      console.log("  kalpana-config set <key> <val>  - Set configuration value");
+      console.log("  kalpana-config get <key>        - Get configuration value");
       console.log("");
       console.log(chalk.cyan("Multi-Runtime Container:"));
       console.log("  All runtimes are pre-installed and ready:");

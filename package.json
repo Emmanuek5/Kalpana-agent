@@ -1,6 +1,6 @@
 {
   "name": "kalpana-agent",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "description": "Kalpana (कल्पना) - AI development assistant with multi-runtime containerized execution, web automation, and multi-modal analysis",
   "keywords": ["ai", "assistant", "development", "docker", "automation", "web-scraping", "multi-modal", "nodejs", "python", "bun"],
   "author": "Kalpana AI Team",
@@ -15,7 +15,8 @@
   },
   "bin": {
     "kalpana": "./dist/src/bin/kalpana.js",
-    "kalpana-interactive": "./dist/src/bin/kalpana-interactive.js"
+    "kalpana-interactive": "./dist/src/bin/kalpana-interactive.js",
+    "kalpana-config": "./dist/src/bin/kalpana-config.js"
   },
   "main": "./dist/index.js",
   "module": "index.ts",
@@ -25,6 +26,7 @@
   },
   "files": [
     "dist/",
+    "scripts/",
     "README.md",
     "README-*.md",
     "Dockerfile.bun",
@@ -35,8 +37,8 @@
     "start": "bun run src/cli.ts",
     "dev": "bun --hot run src/cli.ts",
     "interactive": "bun run src/cli-interactive.ts",
-    "build": "tsc -p tsconfig.build.json && npm run build:fix-extensions",
-    "build:fix-extensions": "node -e \"const fs=require('fs');const path=require('path');function fixExtensions(dir){const files=fs.readdirSync(dir);files.forEach(file=>{const fullPath=path.join(dir,file);if(fs.statSync(fullPath).isDirectory()){fixExtensions(fullPath);}else if(file.endsWith('.js')){let content=fs.readFileSync(fullPath,'utf8');content=content.replace(/from\\s+['\\\"]([^'\\\"]*)\\.ts['\\\"]/g,'from \\\"$1.js\\\"');content=content.replace(/import\\s+['\\\"]([^'\\\"]*)\\.ts['\\\"]/g,'import \\\"$1.js\\\"');fs.writeFileSync(fullPath,content);}});}fixExtensions('./dist');\"",
+    "build": "tsc -p tsconfig.build.json && npm run build:fix-imports",
+    "build:fix-imports": "node scripts/fix-imports.js",
     "build-image": "docker build -f Dockerfile.bun -t ai-container:multi-runtime .",
     "test-image": "docker run --rm ai-container:multi-runtime node --version && docker run --rm ai-container:multi-runtime bun --version && docker run --rm ai-container:multi-runtime python --version",
     "prepublishOnly": "npm run build",

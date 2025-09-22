@@ -58,7 +58,7 @@ function getOAuth2Client() {
   if (!oAuth2Client) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth/callback';
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:44565/oauth/callback';
 
     if (!clientId || !clientSecret) {
       throw new Error('Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.');
@@ -129,7 +129,7 @@ export async function linkAccount(): Promise<{
     });
 
     // Start a temporary callback server
-    const callbackPort = 3000;
+    const callbackPort = 44565;
     let server: any = null;
     
     const tokenPromise = new Promise<any>((resolve, reject) => {

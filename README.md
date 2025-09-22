@@ -40,8 +40,8 @@ bun install -g kalpana-agent
 1. Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-org/kalpana.git
-cd kalpana
+git clone https://github.com/your-org/kalpana-agent.git
+cd kalpana-agent
 bun install
 ```
 
@@ -52,18 +52,46 @@ bun install
 After installing Kalpana globally, run the interactive setup:
 
 ```bash
-kalpana config setup
+kalpana-config setup
 ```
 
 This will guide you through configuring your API keys and preferences. The configuration is stored globally in `~/.kalpana/config.json`.
 
 **Configuration Commands:**
 ```bash
-kalpana config setup              # Interactive setup wizard
-kalpana config show               # Display current configuration  
-kalpana config set <key> <value>  # Set a configuration value
-kalpana config get <key>          # Get a configuration value
-kalpana config validate           # Validate configuration
+kalpana-config setup              # Interactive setup wizard
+kalpana-config show               # Display current configuration  
+kalpana-config set <key> <value>  # Set a configuration value
+kalpana-config get <key>          # Get a configuration value
+kalpana-config validate           # Validate configuration
+kalpana-config mcp                # Open MCP servers configuration
+```
+
+### MCP Server Configuration
+
+Kalpana supports [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers for extending functionality. Configure MCP servers in `~/mcp.json`:
+
+```bash
+kalpana-config mcp    # Opens ~/mcp.json in your default editor
+```
+
+**Example MCP Configuration:**
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-brave-api-key"
+      }
+    }
+  }
+}
 ```
 
 **Local Development Setup:**

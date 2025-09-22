@@ -4,12 +4,16 @@
  * Kalpana Config CLI - Configuration management tool
  */
 
-import chalk from "chalk";
-import { 
-  loadConfig, 
-  saveConfig, 
-  getConfigValue, 
-  setConfigValue, 
+import chalk from 'chalk';
+import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import {
+  loadConfig,
+  saveConfig,
+  getConfigValue,
+  setConfigValue,
   removeConfigValue,
   displayConfig,
   setupConfig,
@@ -34,6 +38,7 @@ ${chalk.yellow('Commands:')}
   path                      Show configuration file path
   validate                  Validate configuration
   reset                     Reset configuration (remove all settings)
+  mcp                       Open MCP servers configuration file
 
 ${chalk.yellow('Examples:')}
   kalpana config setup
@@ -41,6 +46,7 @@ ${chalk.yellow('Examples:')}
   kalpana config set OPENROUTER_API_KEY sk-or-v1-xxx
   kalpana config get OPENROUTER_API_KEY
   kalpana config unset CONTEXT7_API_KEY
+  kalpana config mcp
 
 ${chalk.yellow('Available Configuration Keys:')}
   OPENROUTER_API_KEY        OpenRouter API key (required)
@@ -57,6 +63,75 @@ ${chalk.yellow('Available Configuration Keys:')}
   DOCKER_HOST               Docker host connection
   HISTORY_FILE              Conversation history file
 `;
+
+/**
+ * Open the MCP configuration file in the user's default editor
+ */
+async function openMcpConfig() {
+  const mcpConfigPath = join(homedir(), 'mcp.json');
+  
+  console.log(chalk.cyan('🔧 MCP Configuration'));
+  console.log(`File location: ${chalk.yellow(mcpConfigPath)}`);
+  
+  // Check if file exists
+  if (!existsSync(mcpConfigPath)) {
+    console.log(chalk.yellow('⚠️  MCP configuration file does not exist.'));
+    console.log('Creating a new mcp.json file...');
+    
+    // Create a basic mcp.json template
+    const fs = await import('node:fs/promises');
+    const template = {
+      "mcpServers": {
+        "example-server": {
+          "command": "node",
+          "args": ["path/to/your/mcp-server.js"],
+          "env": {
+            "API_KEY": "your-api-key-here"
+          }
+        }
+      }
+    };
+    
+    try {
+      await fs.writeFile(mcpConfigPath, JSON.stringify(template, null, 2), 'utf8');
+      console.log(chalk.green('✅ Created new mcp.json file with example configuration'));
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to create mcp.json:'), (error as Error).message);
+      return;
+    }
+  }
+  
+  // Try to open the file in the default editor
+  console.log('Opening MCP configuration file...');
+  
+  try {
+    // Determine the appropriate command based on platform
+    const isWindows = process.platform === 'win32';
+    const command = isWindows ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    const args = isWindows ? ['', mcpConfigPath] : [mcpConfigPath];
+    
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      shell: isWindows
+    });
+    
+    child.unref();
+    console.log(chalk.green('✅ MCP configuration file opened in default editor'));
+    console.log('');
+    console.log(chalk.cyan('💡 Tips:'));
+    console.log('  • Add your MCP servers to the "mcpServers" object');
+    console.log('  • Each server needs a "command" and "args" array');
+    console.log('  • Use "env" to set environment variables for the server');
+    console.log('  • Restart Kalpana after making changes');
+    
+  } catch (error) {
+    console.error(chalk.red('❌ Failed to open file:'), (error as Error).message);
+    console.log('');
+    console.log(chalk.yellow('You can manually edit the file at:'));
+    console.log(chalk.cyan(mcpConfigPath));
+  }
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -150,6 +225,10 @@ async function main() {
         } else {
           console.log('Reset cancelled');
         }
+        break;
+        
+      case 'mcp':
+        await openMcpConfig();
         break;
         
       default:

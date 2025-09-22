@@ -8,7 +8,17 @@ export interface StartHyperAgentInput {
   keepBrowserOpen?: boolean;
 }
 
-const client = new Hyperbrowser({ apiKey: process.env.HYPERBROWSER_API_KEY });
+let client: Hyperbrowser | null = null;
+
+function getClient() {
+  if (!client) {
+    if (!process.env.HYPERBROWSER_API_KEY) {
+      throw new Error("HYPERBROWSER_API_KEY environment variable is required for HyperAgent functionality");
+    }
+    client = new Hyperbrowser({ apiKey: process.env.HYPERBROWSER_API_KEY });
+  }
+  return client;
+}
 
 export async function startHyperAgentTask({
   task,
@@ -17,7 +27,8 @@ export async function startHyperAgentTask({
   maxSteps,
   keepBrowserOpen,
 }: StartHyperAgentInput) {
-  const res = await client.agents.hyperAgent.startAndWait({
+  const hyperbrowserClient = getClient();
+  const res = await hyperbrowserClient.agents.hyperAgent.startAndWait({
     task,
     llm: llm as any,
     sessionId,

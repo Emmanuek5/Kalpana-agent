@@ -5,4 +5,4 @@
  * This file is the entry point for the interactive UI when installed globally
  */
 
-import "../cli-interactive.ts";
+import "../cli-interactive.js";

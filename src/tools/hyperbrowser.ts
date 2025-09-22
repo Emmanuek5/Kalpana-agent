@@ -13,12 +13,23 @@ export interface NavigateInput {
   timeout?: number;
 }
 
-const client = new Hyperbrowser({
-  apiKey: process.env.HYPERBROWSER_API_KEY,
-});
+let client: Hyperbrowser | null = null;
+
+function getClient() {
+  if (!client) {
+    if (!process.env.HYPERBROWSER_API_KEY) {
+      throw new Error("HYPERBROWSER_API_KEY environment variable is required for Hyperbrowser functionality");
+    }
+    client = new Hyperbrowser({
+      apiKey: process.env.HYPERBROWSER_API_KEY,
+    });
+  }
+  return client;
+}
 
 export async function createSession({ profile }: CreateSessionInput = {}) {
-  const session = await client.sessions.create({
+  const hyperbrowserClient = getClient();
+  const session = await hyperbrowserClient.sessions.create({
     profile,
     solveCaptchas: true,
     adblock: true,
@@ -29,13 +40,15 @@ export async function createSession({ profile }: CreateSessionInput = {}) {
 }
 
 export async function stopSession(sessionId: string) {
-  await client.sessions.stop(sessionId);
+  const hyperbrowserClient = getClient();
+  await hyperbrowserClient.sessions.stop(sessionId);
   return { ok: true };
 }
 
 // Helper function to get browser and page from session
 async function getBrowserAndPage(sessionId: string): Promise<{ browser: Browser; page: Page }> {
-  const session = await client.sessions.get(sessionId);
+  const hyperbrowserClient = getClient();
+  const session = await hyperbrowserClient.sessions.get(sessionId);
   const browser = await connect({
     browserWSEndpoint: session.wsEndpoint,
     defaultViewport: null,
@@ -614,7 +627,8 @@ export async function scrapeUrl(options: {
       scrapeConfig.extract = extractOptions;
     }
 
-    const scrapeResult = await client.scrape.startAndWait(scrapeConfig);
+    const hyperbrowserClient = getClient();
+    const scrapeResult = await hyperbrowserClient.scrape.startAndWait(scrapeConfig);
     
     return {
       success: true,
