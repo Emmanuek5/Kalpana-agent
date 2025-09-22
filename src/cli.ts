@@ -11,6 +11,7 @@ import {
 } from "./tools/docker";
 import { formatResponse } from "./markdown";
 import fs from "node:fs/promises";
+import { loadEnvironment, validateConfig, configExists } from "./config.js";
 
 // Global error handlers to prevent application crashes
 process.on('uncaughtException', (error) => {
@@ -54,8 +55,80 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
+function parseSandboxPath(): string {
+  const sandboxIndex = process.argv.indexOf("--sandbox");
+  if (sandboxIndex !== -1 && sandboxIndex + 1 < process.argv.length) {
+    const sandboxPath = process.argv[sandboxIndex + 1];
+    
+    // Ensure sandboxPath is defined and not empty
+    if (!sandboxPath || sandboxPath.trim() === "") {
+      console.error(chalk.red("❌ --sandbox flag requires a valid path argument"));
+      process.exit(1);
+    }
+    
+    const trimmedPath = sandboxPath.trim();
+    
+    // Handle relative paths
+    if (trimmedPath === ".") {
+      return process.cwd();
+    } else if (trimmedPath.startsWith("./")) {
+      return require("path").resolve(process.cwd(), trimmedPath);
+    } else if (trimmedPath.startsWith("../")) {
+      return require("path").resolve(process.cwd(), trimmedPath);
+    } else if (require("path").isAbsolute(trimmedPath)) {
+      return trimmedPath;
+    } else {
+      // Relative path without ./ prefix
+      return require("path").resolve(process.cwd(), trimmedPath);
+    }
+  }
+  
+  // Fallback to environment variable or default
+  return process.env.SANDBOX_VOLUME_PATH || "./.sandbox";
+}
+
 async function main() {
-  console.log(chalk.cyan("AI Container CLI - Multi-Runtime"));
+  // Handle config commands before anything else
+  if (process.argv[2] === 'config') {
+    const { spawn } = await import('node:child_process');
+    const configArgs = process.argv.slice(3);
+    const configProcess = spawn(process.execPath, [
+      require.resolve('./config-cli.js')
+    ].concat(configArgs), {
+      stdio: 'inherit'
+    });
+    
+    configProcess.on('exit', (code) => {
+      process.exit(code || 0);
+    });
+    return;
+  }
+
+  // Load global configuration
+  await loadEnvironment();
+  
+  // Check if configuration exists and is valid
+  const hasConfig = await configExists();
+  if (!hasConfig) {
+    console.log(chalk.yellow('⚠️  No configuration found.'));
+    console.log('Run ' + chalk.cyan('kalpana config setup') + ' to configure Kalpana with your API keys.');
+    console.log('Or run ' + chalk.cyan('kalpana config --help') + ' for more options.');
+    process.exit(1);
+  }
+  
+  const validation = await validateConfig();
+  if (!validation.valid) {
+    console.log(chalk.red('❌ Configuration is incomplete.'));
+    console.log(chalk.yellow('Missing required settings:'));
+    validation.missing.forEach(key => {
+      console.log(`  - ${key}`);
+    });
+    console.log('');
+    console.log('Run ' + chalk.cyan('kalpana config setup') + ' to complete configuration.');
+    process.exit(1);
+  }
+
+  console.log(chalk.cyan("Kalpana (कल्पना) - AI Development Assistant"));
   // Flags
   const saveHistory =
     process.argv.includes("--save-history") ||
@@ -63,7 +136,7 @@ async function main() {
   const historyFile = process.env.HISTORY_FILE || "history.json";
   // Use multi-runtime container (contains Node.js, Bun, and Python pre-installed)
   const runtime = "bun"; // Default runtime for container launch (all runtimes available)
-  const hostVolumePath = process.env.SANDBOX_VOLUME_PATH || "./.sandbox";
+  const hostVolumePath = parseSandboxPath();
   try {
     const ping = await verifyDockerConnection();
     console.log(
@@ -96,6 +169,12 @@ async function main() {
       `Multi-runtime container ready → all runtimes available (node, bun, python) → volume=${hostVolumePath}`
     )
   );
+  
+  // Show sandbox path info
+  const isCustomPath = process.argv.includes("--sandbox");
+  if (isCustomPath) {
+    console.log(chalk.blue(`📁 Using custom sandbox path: ${hostVolumePath}`));
+  }
 
   // No automatic MCP status output; use '/mcp' command to view
 
@@ -237,13 +316,29 @@ async function main() {
       continue;
     }
 
-    if (input === "/help") {
+    if (input.trim() === "/help") {
       console.log(chalk.cyan("Available Commands:"));
       console.log(
         "  /processes   - List all processes in container (/ps for short)"
       );
       console.log("  /mcp         - Show MCP server status");
+      console.log("  /config      - Show configuration management help");
       console.log("  /help        - Show this help message");
+      console.log("");
+      console.log(chalk.cyan("CLI Options:"));
+      console.log("  --sandbox <path>    - Set custom sandbox directory");
+      console.log("    Examples:");
+      console.log("      --sandbox .                    (current directory)");
+      console.log("      --sandbox ./my-project         (relative path)");
+      console.log("      --sandbox /absolute/path       (absolute path)");
+      console.log("      --sandbox ../parent-folder     (parent directory)");
+      console.log("  --save-history      - Save conversation history");
+      console.log("");
+      console.log(chalk.cyan("Configuration Management:"));
+      console.log("  kalpana config setup            - Interactive setup wizard");
+      console.log("  kalpana config show             - Display current config");
+      console.log("  kalpana config set <key> <val>  - Set configuration value");
+      console.log("  kalpana config get <key>        - Get configuration value");
       console.log("");
       console.log(chalk.cyan("Multi-Runtime Container:"));
       console.log("  All runtimes are pre-installed and ready:");
@@ -260,6 +355,27 @@ async function main() {
       console.log("  🌐 All ports automatically accessible on host (no port mapping needed)");
       console.log("");
       console.log("You can ask questions or give instructions directly.");
+      process.stdout.write("\n> ");
+      continue;
+    }
+
+    if (input.trim() === "/config") {
+      console.log(chalk.cyan("Configuration Management:"));
+      console.log("");
+      console.log("Exit Kalpana and run these commands:");
+      console.log(chalk.yellow("  kalpana config setup") + "            - Interactive configuration wizard");
+      console.log(chalk.yellow("  kalpana config show") + "             - Display current configuration");
+      console.log(chalk.yellow("  kalpana config set <key> <value>") + " - Set a configuration value");
+      console.log(chalk.yellow("  kalpana config get <key>") + "        - Get a configuration value");
+      console.log(chalk.yellow("  kalpana config unset <key>") + "      - Remove a configuration value");
+      console.log(chalk.yellow("  kalpana config validate") + "         - Validate current configuration");
+      console.log(chalk.yellow("  kalpana config path") + "             - Show config file location");
+      console.log("");
+      console.log("Example API keys to configure:");
+      console.log("  OPENROUTER_API_KEY     - Required for AI functionality");
+      console.log("  HYPERBROWSER_API_KEY   - For web automation features");
+      console.log("  GEMINI_API_KEY         - For multi-modal analysis");
+      console.log("  CONTEXT7_API_KEY       - For documentation search");
       process.stdout.write("\n> ");
       continue;
     }

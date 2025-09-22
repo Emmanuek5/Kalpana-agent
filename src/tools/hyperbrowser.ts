@@ -569,3 +569,152 @@ export async function getAllElements(options: {
     };
   }
 }
+
+export async function scrapeUrl(options: {
+  url: string;
+  extractText?: boolean;
+  extractLinks?: boolean;
+  extractImages?: boolean;
+  extractMetadata?: boolean;
+  waitForSelector?: string;
+  timeout?: number;
+}): Promise<{ 
+  success: boolean; 
+  data?: any; 
+  text?: string;
+  links?: string[];
+  images?: string[];
+  metadata?: any;
+  error?: string 
+}> {
+  try {
+    // Use the HyperBrowser scrape API for intelligent content extraction
+    const scrapeConfig: any = {
+      url: options.url,
+    };
+
+    // Add timeout if specified
+    if (options.timeout) {
+      scrapeConfig.timeout = options.timeout;
+    }
+
+    // Add wait condition if specified
+    if (options.waitForSelector) {
+      scrapeConfig.waitForSelector = options.waitForSelector;
+    }
+
+    // Configure extraction options
+    const extractOptions: any = {};
+    if (options.extractText !== false) extractOptions.text = true;
+    if (options.extractLinks) extractOptions.links = true;
+    if (options.extractImages) extractOptions.images = true;
+    if (options.extractMetadata) extractOptions.metadata = true;
+
+    if (Object.keys(extractOptions).length > 0) {
+      scrapeConfig.extract = extractOptions;
+    }
+
+    const scrapeResult = await client.scrape.startAndWait(scrapeConfig);
+    
+    return {
+      success: true,
+      data: scrapeResult,
+      text: (scrapeResult as any).text,
+      links: (scrapeResult as any).links,
+      images: (scrapeResult as any).images,
+      metadata: (scrapeResult as any).metadata
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: `Failed to scrape URL '${options.url}': ${error.message}`
+    };
+  }
+}
+
+export async function scrapeWithSession(options: {
+  sessionId: string;
+  url?: string;
+  extractText?: boolean;
+  extractLinks?: boolean;
+  extractImages?: boolean;
+  extractMetadata?: boolean;
+  selector?: string;
+}): Promise<{ 
+  success: boolean; 
+  data?: any; 
+  text?: string;
+  links?: string[];
+  images?: string[];
+  metadata?: any;
+  error?: string 
+}> {
+  try {
+    const { browser, page } = await getBrowserAndPage(options.sessionId);
+    
+    // Navigate to URL if provided
+    if (options.url) {
+      await page.goto(options.url, { waitUntil: 'networkidle2' });
+    }
+
+    const result: any = {};
+
+    // Extract text content
+    if (options.extractText !== false) {
+      if (options.selector) {
+        result.text = await page.$eval(options.selector, (el) => el.textContent?.trim() || '');
+      } else {
+        result.text = await page.evaluate(() => document.body.textContent?.trim() || '');
+      }
+    }
+
+    // Extract links
+    if (options.extractLinks) {
+      result.links = await page.$$eval('a[href]', (links) => 
+        links.map(link => (link as HTMLAnchorElement).href).filter(href => href)
+      );
+    }
+
+    // Extract images
+    if (options.extractImages) {
+      result.images = await page.$$eval('img[src]', (images) => 
+        images.map(img => (img as HTMLImageElement).src).filter(src => src)
+      );
+    }
+
+    // Extract metadata
+    if (options.extractMetadata) {
+      result.metadata = await page.evaluate(() => {
+        const title = document.title;
+        const description = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+        const keywords = document.querySelector('meta[name="keywords"]')?.getAttribute('content') || '';
+        const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+        const ogDescription = document.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
+        const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+        
+        return {
+          title,
+          description,
+          keywords,
+          openGraph: {
+            title: ogTitle,
+            description: ogDescription,
+            image: ogImage
+          }
+        };
+      });
+    }
+
+    await browser.disconnect();
+    return {
+      success: true,
+      data: result,
+      ...result
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: `Failed to scrape with session: ${error.message}`
+    };
+  }
+}

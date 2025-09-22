@@ -1,18 +1,52 @@
 {
-  "name": "ai-container",
+  "name": "kalpana-agent",
+  "version": "1.0.0",
+  "description": "Kalpana (कल्पना) - AI development assistant with multi-runtime containerized execution, web automation, and multi-modal analysis",
+  "keywords": ["ai", "assistant", "development", "docker", "automation", "web-scraping", "multi-modal", "nodejs", "python", "bun"],
+  "author": "Kalpana AI Team",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/kalpana",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/kalpana.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/kalpana/issues"
+  },
+  "bin": {
+    "kalpana": "./dist/src/bin/kalpana.js",
+    "kalpana-interactive": "./dist/src/bin/kalpana-interactive.js"
+  },
+  "main": "./dist/index.js",
   "module": "index.ts",
   "type": "module",
-  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "README-*.md",
+    "Dockerfile.bun",
+    "system.txt",
+    "tsconfig.build.json"
+  ],
   "scripts": {
     "start": "bun run src/cli.ts",
     "dev": "bun --hot run src/cli.ts",
     "interactive": "bun run src/cli-interactive.ts",
+    "build": "tsc -p tsconfig.build.json && npm run build:fix-extensions",
+    "build:fix-extensions": "node -e \"const fs=require('fs');const path=require('path');function fixExtensions(dir){const files=fs.readdirSync(dir);files.forEach(file=>{const fullPath=path.join(dir,file);if(fs.statSync(fullPath).isDirectory()){fixExtensions(fullPath);}else if(file.endsWith('.js')){let content=fs.readFileSync(fullPath,'utf8');content=content.replace(/from\\s+['\\\"]([^'\\\"]*)\\.ts['\\\"]/g,'from \\\"$1.js\\\"');content=content.replace(/import\\s+['\\\"]([^'\\\"]*)\\.ts['\\\"]/g,'import \\\"$1.js\\\"');fs.writeFileSync(fullPath,content);}});}fixExtensions('./dist');\"",
     "build-image": "docker build -f Dockerfile.bun -t ai-container:multi-runtime .",
-    "test-image": "docker run --rm ai-container:multi-runtime node --version && docker run --rm ai-container:multi-runtime bun --version && docker run --rm ai-container:multi-runtime python --version"
+    "test-image": "docker run --rm ai-container:multi-runtime node --version && docker run --rm ai-container:multi-runtime bun --version && docker run --rm ai-container:multi-runtime python --version",
+    "prepublishOnly": "npm run build",
+    "postinstall": "echo 'Kalpana installed! Run: kalpana --help'"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/dockerode": "^3.3.44"
+    "@types/dockerode": "^3.3.44",
+    "typescript": "^5.0.0",
+    "rimraf": "^5.0.0"
   },
   "peerDependencies": {
     "typescript": "^5"

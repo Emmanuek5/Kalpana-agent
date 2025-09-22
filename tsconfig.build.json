@@ -1,0 +1,38 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Override bundler-specific settings for Node.js build
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    
+    // Remove bundler-specific options that cause issues
+    "allowImportingTsExtensions": false,
+    "verbatimModuleSyntax": false,
+    
+    // Ensure compatibility
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    
+    // Fix type issues
+    "noImplicitAny": false,
+    "strict": false
+  },
+  "include": [
+    "src/**/*",
+    "*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
