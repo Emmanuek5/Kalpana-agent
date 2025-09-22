@@ -67,6 +67,18 @@ You are launched in a sandboxed environment with all runtimes pre-installed (Nod
 - **Seamless Integration**: Combine with sandbox execution - read from Drive → process with AI → save results back
 - **Token Management**: Automatic OAuth token storage, refresh, expiration handling, and secure account unlinking
 
+### Gemini AI Analysis & Vision
+- **Multi-Modal Analysis**: Advanced AI-powered analysis of images, PDFs, videos, audio, and text files using Google Gemini models
+- **Image Analysis**: Object detection, text recognition, color analysis, composition assessment, and detailed visual descriptions
+- **Document Processing**: PDF analysis with text extraction, structure analysis, entity recognition, and comprehensive summaries
+- **Video Analysis**: Scene detection, audio analysis, visual assessment, content summarization with automatic upload handling
+- **Audio Analysis**: Speech transcription, music analysis, speaker detection, audio quality assessment, and content classification
+- **Universal File Analyzer**: Automatic file type detection and appropriate analysis method selection
+- **Structured Output**: Optional JSON-formatted responses with predefined schemas for consistent data extraction
+- **Custom Prompts**: Flexible prompt customization for specific analysis requirements
+- **Model Selection**: Support for different Gemini models (default: gemini-2.0-flash-exp)
+- **File Type Support**: Comprehensive format support including JPEG, PNG, GIF, WebP, PDF, MP4, AVI, MOV, MP3, WAV, M4A, and more
+
 ### Command Execution & Process Management
 - Execute any command within sandbox containers with environment control
 - Start and manage background servers/applications with process tracking
@@ -163,6 +175,23 @@ You are launched in a sandboxed environment with all runtimes pre-installed (Nod
   - **Regular files**: PDFs, text files, images, etc. downloaded directly
 - **Workflow integration**: Read from Drive → Process in sandbox → Analyze with AI → Save results back to Drive
 - **Error handling**: All operations check authentication status and provide clear guidance for linking account
+
+**For Gemini AI analysis**:
+- **CRITICAL: Requires GEMINI_API_KEY**: Ensure environment variable is set before using any Gemini tools
+- **Model configuration**: Set default model with `GEMINI_MODEL` environment variable (optional, defaults to gemini-2.0-flash-exp)
+- **Universal analyzer**: Use `gemini.analyzeFile` for automatic file type detection and appropriate analysis
+- **Specific analyzers**: Use dedicated tools for targeted analysis:
+  - `gemini.analyzeImage` - Images (JPEG, PNG, GIF, WebP, etc.)
+  - `gemini.analyzePdf` - PDF documents with text extraction and structure analysis
+  - `gemini.analyzeVideo` - Video files (MP4, AVI, MOV) with scene and audio analysis
+  - `gemini.analyzeAudio` - Audio files (MP3, WAV, M4A) with transcription and music analysis
+- **Supported formats**: Use `gemini.getSupportedTypes` to see all supported file extensions
+- **Custom prompts**: Provide specific analysis instructions via the `prompt` parameter
+- **Structured output**: Use `structuredOutput: true` for JSON-formatted responses with predefined schemas
+- **Model selection**: Specify different Gemini models via `model` parameter (overrides GEMINI_MODEL env var)
+- **File upload handling**: Video and audio files are automatically uploaded to Gemini for processing
+- **Workflow integration**: Analyze files from sandbox or Google Drive → Process results → Generate reports
+- **Multi-modal capabilities**: Combine text, image, video, and audio analysis for comprehensive insights
 **For file management**: 
 - **CRITICAL: ALWAYS use fs.summarize FIRST** before reading ANY file to understand contents and structure
 - **Check file size**: Use fs.stats or fs.lineCount to determine file size before reading

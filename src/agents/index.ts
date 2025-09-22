@@ -19,6 +19,7 @@ import { buildHyperbrowserTools } from "./tools/hyperbrowser";
 import { mcpManager } from "../mcp";
 import { createSafeToolWrapper } from "./safeToolWrapper";
 import { buildGDriveTools } from "./tools/gdrive";
+import { buildGeminiTools } from "./tools/gemini";
 
 export async function runAgent(
   userInstruction: string,

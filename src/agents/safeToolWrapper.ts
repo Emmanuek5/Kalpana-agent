@@ -201,6 +201,19 @@ export function getToolStartMessage(
       return `🔍 Searching Google Drive for "${chalk.cyan(
         arg.query || "files"
       )}"`;
+    // Gemini AI analysis tools
+    case "gemini.analyzeImage":
+      return `🖼️ Analyzing image ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+    case "gemini.analyzePdf":
+      return `📄 Analyzing PDF ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+    case "gemini.analyzeVideo":
+      return `🎥 Analyzing video ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+    case "gemini.analyzeAudio":
+      return `🎵 Analyzing audio ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+    case "gemini.analyzeFile":
+      return `🔍 Auto-analyzing file ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+    case "gemini.getSupportedTypes":
+      return `📋 Getting supported file types for Gemini analysis`;
     default:
       if (toolName.startsWith("mcp.")) {
         const parts = toolName.split(".");
