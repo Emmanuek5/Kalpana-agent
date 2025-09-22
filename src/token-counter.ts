@@ -66,14 +66,15 @@ function countSpecialTokens(text: string): {
   markdownTokens: number;
   unicodeTokens: number;
 } {
+  const codeBlocks: string[] = text.match(/```[\s\S]*?```/g) || [];
+  const codeTokenCount: number = codeBlocks.reduce((sum: number, block: string) => sum + block.length, 0);
+
   return {
     // JSON structure tokens
     jsonTokens: (text.match(/[{}[\]",:]/g) || []).length,
     
     // Code block tokens (often tokenized differently)
-    codeTokens: (text.match(/```[\s\S]*?```/g) || []).reduce(
-      (sum, block) => sum + block.length, 0
-    ),
+    codeTokens: codeTokenCount,
     
     // Markdown formatting tokens
     markdownTokens: (text.match(/[*_`#\-+>|]/g) || []).length,
