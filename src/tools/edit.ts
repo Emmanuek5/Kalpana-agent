@@ -198,6 +198,20 @@ Please create a new file according to the instruction. Return the complete file 
       // Create directory if it doesn't exist
       await fs.mkdir(path.dirname(target), { recursive: true });
 
+      // Calculate diff information
+      const newLines = result.object.content.split("\n");
+      const newLinesCount = newLines.length;
+      let linesAdded = 0;
+      let linesRemoved = 0;
+
+      if (fileExists) {
+        const oldLines = existingContent.split("\n");
+        linesAdded = Math.max(0, newLinesCount - oldLines.length);
+        linesRemoved = Math.max(0, oldLines.length - newLinesCount);
+      } else {
+        linesAdded = newLinesCount;
+      }
+
       // Write the file
       await fs.writeFile(target, result.object.content, "utf8");
 
@@ -206,7 +220,12 @@ Please create a new file according to the instruction. Return the complete file 
         message: `File ${fileExists ? "modified" : "created"} successfully`,
         summary: result.object.summary,
         warnings: result.object.warnings || [],
-        linesWritten: result.object.content.split("\n").length,
+        linesWritten: newLinesCount,
+        linesAdded,
+        linesRemoved,
+        diffSummary: fileExists
+          ? `+${linesAdded} -${linesRemoved}`
+          : `${newLinesCount} lines created`,
       };
     } else {
       return {

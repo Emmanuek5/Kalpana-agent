@@ -7,11 +7,25 @@ import {
   zodSchema,
   type ModelMessage,
 } from "ai";
+// Legacy agent preserved for backward compatibility during refactor.
+// New implementations live under ./agents and are used by CLIs.
+import { openrouter, buildSystemPrompt } from "./agents/system.ts";
 import {
-  createOpenRouter,
-  openrouter as defaultOpenRouter,
-} from "@openrouter/ai-sdk-provider";
-import { startContainer, execInContainer, stopContainer } from "./tools/docker";
+  createSafeToolWrapper,
+  getToolStartMessage,
+  getToolCompletionMessage,
+} from "./agents/safeToolWrapper.ts";
+import {
+  startContainer,
+  execInContainer,
+  stopContainer,
+  getCurrentContainer,
+  connectToNetwork,
+  disconnectFromNetwork,
+  listNetworks,
+  createNetwork,
+  restartContainerWithPorts,
+} from "./tools/docker";
 import { createSession, navigate, stopSession } from "./tools/hyperbrowser";
 import { context7Search, context7GetDocs, fetchDocsByUrl } from "./tools/docs";
 import {
@@ -23,19 +37,27 @@ import {
   fsCopy,
   fsMove,
   fsStats,
+  summarizeFile,
+  fsReadFileChunk,
 } from "./tools/fs";
 import { searchReplace, subAgentWrite } from "./tools/edit";
 import {
   execCommand,
-  startServer,
-  stopServer,
-  listServers,
-  getServerLogs,
   findPidsByPort,
   killPid,
   freePort,
   grepWorkspace,
+  listAllProcesses,
+  getProcessInfo,
 } from "./tools/exec";
+import {
+  isAccountLinked,
+  linkAccount,
+  listFiles as gdriveListFiles,
+  readFile as gdriveReadFile,
+  writeFile as gdriveWriteFile,
+  searchFiles as gdriveSearchFiles,
+} from "./tools/gdrive";
 import {
   createInternalBrowser,
   navigate as browserNavigate,
@@ -56,68 +78,18 @@ import {
 } from "./sandbox";
 import { startHyperAgentTask } from "./tools/hyperagent";
 import { mcpManager } from "./mcp";
+import { progressIndicator, interactiveProgressTracker } from "./progress";
+import { toolCollector } from "./tool-collector";
 import chalk from "chalk";
-
-const openrouter = process.env.OPENROUTER_API_KEY
-  ? createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
-  : defaultOpenRouter;
-
-// Wrapper to safely execute tool functions with error handling
-function createSafeToolWrapper<T extends (...args: any[]) => any>(
-  toolName: string,
-  toolFn: T
-): T {
-  return ((...args: any[]) => {
-    try {
-      const result = toolFn(...args);
-
-      // Handle both sync and async functions
-      if (result && typeof result.then === "function") {
-        return result.catch((error: Error) => {
-          console.error(
-            chalk.red(`Tool error [${toolName}]: ${error.message}`)
-          );
-          return {
-            success: false,
-            error: error.message,
-            toolName,
-            recoverable: true,
-          };
-        });
-      }
-
-      return result;
-    } catch (error) {
-      console.error(
-        chalk.red(`Tool error [${toolName}]: ${(error as Error).message}`)
-      );
-      return {
-        success: false,
-        error: (error as Error).message,
-        toolName,
-        recoverable: true,
-      };
-    }
-  }) as T;
-}
 
 export async function runAgent(
   userInstruction: string,
-  history: ModelMessage[] = []
+  history: ModelMessage[] = [],
+  useInteractiveProgress = false
 ) {
   const model = openrouter(process.env.MODEL_ID || "openai/gpt-4o-mini");
 
-  // Start loading MCP tools in background (non-blocking)
-  if (
-    !mcpManager.isLoadingTools() &&
-    mcpManager.getLoadedServers().length === 0
-  ) {
-    mcpManager.startLoadingFromConfig().catch((error) => {
-      console.error(chalk.red(`MCP loading failed: ${error.message}`));
-    });
-  }
-
-  let system = process.env.AI_SYSTEM || "";
+  let system = undefined;
   if (!system) {
     try {
       const fs = await import("node:fs/promises");
@@ -129,6 +101,10 @@ export async function runAgent(
       "You are a helpful, concise AI agent with expert developer skills. Prefer step-by-step tool use and precise answers. If a tool fails, continue with alternative approaches and report the issue.";
   }
 
+  system += `
+  Today's date is ${new Date().toLocaleDateString()}. 
+  `;
+
   const controller = new AbortController();
   const timeoutMs = Number(process.env.AI_TIMEOUT_MS || 60000);
   const to = setTimeout(
@@ -138,29 +114,30 @@ export async function runAgent(
 
   let result;
   try {
-    // Get current MCP tools (may be empty if still loading)
+    // Get current MCP tools (no logging - done at startup)
     const mcpTools = mcpManager.getTools();
 
-    // Log MCP status if tools are loading
-    if (mcpManager.isLoadingTools()) {
-      console.log(
-        chalk.blue("🔄 MCP tools are still loading in background...")
-      );
-    } else if (Object.keys(mcpTools).length > 0) {
-      console.log(
-        chalk.green(
-          `🛠️ Using ${Object.keys(mcpTools).length} MCP tools from: ${mcpManager
-            .getLoadedServers()
-            .join(", ")}`
-        )
-      );
-    }
+    // Wrap MCP tools with safe execution
+    const wrappedMcpTools = Object.fromEntries(
+      Object.entries(mcpTools).map(([toolName, toolDef]) => {
+        if (typeof toolDef === "object" && toolDef && "execute" in toolDef) {
+          return [
+            toolName,
+            {
+              ...toolDef,
+              execute: createSafeToolWrapper(toolName, toolDef.execute as any),
+            },
+          ];
+        }
+        return [toolName, toolDef];
+      })
+    );
 
     result = await generateText({
       model,
       messages: [...history, { role: "user", content: userInstruction }],
       system,
-      stopWhen: stepCountIs(18),
+      stopWhen: stepCountIs(30),
       providerOptions: {
         openrouter: {
           include_reasoning: false,
@@ -168,21 +145,21 @@ export async function runAgent(
       },
       tools: {
         // Merge static tools with dynamic MCP tools
-        ...mcpTools,
+        ...wrappedMcpTools,
         // Sandbox lifecycle
         "sandbox.launch": tool<
           {
-            runtime: "node" | "python";
+            runtime: "bun" | "node" | "python";
             hostVolumePath: string;
             reuseContainerId?: string;
           },
           { containerId: string; runtime: string }
         >({
           description:
-            "Launch or reuse a single sandbox container with a persistent host volume.",
+            "Launch the multi-runtime sandbox container with ALL runtimes pre-installed (Node.js 20, Bun 1.2.22, Python 3.11, UV). Ultra-fast startup with no installation time. All runtimes are available simultaneously in the same container.",
           inputSchema: zodSchema(
             z.object({
-              runtime: z.enum(["node", "python"] as const),
+              runtime: z.enum(["bun", "node", "python"] as const),
               hostVolumePath: z.string(),
               reuseContainerId: z.string().optional(),
             })
@@ -205,44 +182,47 @@ export async function runAgent(
           { runtime: string; containerId: string } | { error: string }
         >({
           description:
-            "Get information about the currently active sandbox container (runtime type and container ID).",
+            "Get information about the currently active multi-runtime sandbox container. The container has all runtimes available: Node.js, Bun, and Python.",
           inputSchema: zodSchema(z.object({})),
-          execute: async () => {
+          execute: createSafeToolWrapper("sandbox.info", async () => {
             const info = getSandboxInfo();
             if (!info) {
               return { error: "No active sandbox container" };
             }
             return { runtime: info.runtime, containerId: info.containerId };
-          },
+          }),
         }),
 
         "sandbox.switch": tool<
-          { runtime: "node" | "python" },
+          { runtime: "bun" | "node" | "python" },
           { containerId: string; runtime: string; switched: boolean }
         >({
           description:
-            "Switch sandbox runtime (node/python). Will reuse existing container if already correct runtime, or create new one with same volume if different runtime needed.",
+            "Legacy runtime switching tool - NOT NEEDED with multi-runtime container. All runtimes (Node.js, Bun, Python) are available simultaneously. Use sandbox.launch instead for new containers.",
           inputSchema: zodSchema(
             z.object({
-              runtime: z.enum(["node", "python"] as const),
+              runtime: z.enum(["bun", "node", "python"] as const),
             })
           ),
-          execute: async ({ runtime }) => {
-            const currentInfo = getSandboxInfo();
-            if (currentInfo && currentInfo.runtime === runtime) {
+          execute: createSafeToolWrapper(
+            "sandbox.switch",
+            async ({ runtime }) => {
+              const currentInfo = getSandboxInfo();
+              if (currentInfo && currentInfo.runtime === runtime) {
+                return {
+                  containerId: currentInfo.containerId,
+                  runtime: currentInfo.runtime,
+                  switched: false,
+                };
+              }
+              const s = await switchSandboxRuntime(runtime);
               return {
-                containerId: currentInfo.containerId,
-                runtime: currentInfo.runtime,
-                switched: false,
+                containerId: s.containerId,
+                runtime: s.runtime,
+                switched: true,
               };
             }
-            const s = await switchSandboxRuntime(runtime);
-            return {
-              containerId: s.containerId,
-              runtime: s.runtime,
-              switched: true,
-            };
-          },
+          ),
         }),
 
         // Hyperbrowser: HyperAgent subagent runner
@@ -267,12 +247,17 @@ export async function runAgent(
               keepBrowserOpen: z.boolean().optional(),
             })
           ),
-          execute: startHyperAgentTask as any,
+          execute: createSafeToolWrapper(
+            "hyperagent.run",
+            startHyperAgentTask as any
+          ),
         }),
         "sandbox.shutdown": tool<{}, { ok: true }>({
           description: "Stop and remove the active sandbox container.",
           inputSchema: zodSchema(z.object({})),
-          execute: async () => ({ ok: (await shutdownSandbox()).ok as true }),
+          execute: createSafeToolWrapper("sandbox.shutdown", async () => ({
+            ok: (await shutdownSandbox()).ok as true,
+          })),
         }),
 
         // File system tools (restricted to sandbox volume)
@@ -284,12 +269,27 @@ export async function runAgent(
           inputSchema: zodSchema(
             z.object({ relativePath: z.string(), content: z.string() })
           ),
-          execute: fsWriteFile as any,
+          execute: createSafeToolWrapper("fs.writeFile", fsWriteFile as any),
         }),
-        "fs.readFile": tool<{ relativePath: string }, { text: string }>({
-          description: "Read a file from the sandbox persistent volume.",
-          inputSchema: zodSchema(z.object({ relativePath: z.string() })),
-          execute: fsReadFile as any,
+        "fs.readFile": tool<
+          { relativePath: string; startLine?: number; endLine?: number },
+          any
+        >({
+          description: "Read a file from the sandbox persistent volume. Returns max 400 lines at a time. For large files (>1000 lines), shows summary unless specific line range requested. Use fs.summarize first for large files, then read specific chunks with startLine/endLine if needed.",
+          inputSchema: zodSchema(z.object({ 
+            relativePath: z.string(),
+            startLine: z.number().optional(),
+            endLine: z.number().optional()
+          })),
+          execute: createSafeToolWrapper("fs.readFile", async (args: any) => {
+            const result = await fsReadFile({
+              relativePath: args.relativePath,
+              maxLines: 400,
+              startLine: args.startLine,
+              endLine: args.endLine
+            });
+            return result;
+          }),
         }),
         "fs.listDir": tool<
           { relativePath?: string; recursive?: boolean },
@@ -303,7 +303,7 @@ export async function runAgent(
               recursive: z.boolean().optional(),
             })
           ),
-          execute: async (args) => {
+          execute: createSafeToolWrapper("fs.listDir", async (args) => {
             const res = (await fsListDir(args as any)) as any;
             try {
               const entries = Array.isArray(res) ? res : [];
@@ -314,15 +314,15 @@ export async function runAgent(
                   } entries`
                 )
               );
-              for (const e of entries.slice(0, 50)) {
+              for (const e of entries.slice(0, 10)) {
                 console.log(chalk.gray(`  - ${e.type} ${e.path}`));
               }
-              if (entries.length > 50) {
-                console.log(chalk.gray(`  ... (${entries.length - 50} more)`));
+              if (entries.length > 10) {
+                console.log(chalk.gray(`  ... (${entries.length - 10} more)`));
               }
             } catch {}
             return res;
-          },
+          }),
         }),
 
         "fs.makeDir": tool<
@@ -336,7 +336,7 @@ export async function runAgent(
               recursive: z.boolean().optional(),
             })
           ),
-          execute: fsMakeDir as any,
+          execute: createSafeToolWrapper("fs.makeDir", fsMakeDir as any),
         }),
 
         "fs.delete": tool<
@@ -350,7 +350,7 @@ export async function runAgent(
               recursive: z.boolean().optional(),
             })
           ),
-          execute: fsDelete as any,
+          execute: createSafeToolWrapper("fs.delete", fsDelete as any),
         }),
 
         "fs.copy": tool<
@@ -364,7 +364,7 @@ export async function runAgent(
               destinationPath: z.string(),
             })
           ),
-          execute: fsCopy as any,
+          execute: createSafeToolWrapper("fs.copy", fsCopy as any),
         }),
 
         "fs.move": tool<
@@ -379,7 +379,7 @@ export async function runAgent(
               destinationPath: z.string(),
             })
           ),
-          execute: fsMove as any,
+          execute: createSafeToolWrapper("fs.move", fsMove as any),
         }),
 
         "fs.stats": tool<
@@ -393,7 +393,29 @@ export async function runAgent(
               relativePath: z.string(),
             })
           ),
-          execute: fsStats as any,
+          execute: createSafeToolWrapper("fs.stats", fsStats as any),
+        }),
+
+        "fs.summarize": tool<
+          { relativePath: string },
+          any
+        >({
+          description: "Get an AI-generated summary of a file's contents, structure, and purpose. Use this FIRST before reading large files to understand what they contain.",
+          inputSchema: zodSchema(z.object({ relativePath: z.string() })),
+          execute: createSafeToolWrapper("fs.summarize", summarizeFile as any),
+        }),
+
+        "fs.readChunk": tool<
+          { relativePath: string; startLine: number; endLine: number },
+          any
+        >({
+          description: "Read a specific chunk of lines from a file. Use after fs.summarize to read specific sections of interest.",
+          inputSchema: zodSchema(z.object({ 
+            relativePath: z.string(),
+            startLine: z.number(),
+            endLine: z.number()
+          })),
+          execute: createSafeToolWrapper("fs.readChunk", fsReadFileChunk as any),
         }),
 
         // Advanced file editing tools
@@ -416,7 +438,10 @@ export async function runAgent(
               replaceAll: z.boolean().optional(),
             })
           ),
-          execute: searchReplace as any,
+          execute: createSafeToolWrapper(
+            "edit.searchReplace",
+            searchReplace as any
+          ),
         }),
 
         "edit.subAgentWrite": tool<
@@ -442,7 +467,10 @@ export async function runAgent(
               createIfNotExists: z.boolean().optional(),
             })
           ),
-          execute: subAgentWrite as any,
+          execute: createSafeToolWrapper(
+            "edit.subAgentWrite",
+            subAgentWrite as any
+          ),
         }),
 
         // Command execution tools
@@ -463,7 +491,7 @@ export async function runAgent(
           }
         >({
           description:
-            "Execute a command inside the sandbox container. Use for running scripts, installing packages, or general command execution.",
+            "Execute a command inside the multi-runtime sandbox container. Available runtimes: node, npm, bun, python, pip, uv. Use for running scripts, installing packages, or general command execution.",
           inputSchema: zodSchema(
             z.object({
               command: z.string(),
@@ -488,91 +516,6 @@ export async function runAgent(
           }),
         }),
 
-        "exec.startServer": tool<
-          {
-            command: string;
-            args?: string[];
-            port: number;
-            env?: Record<string, string>;
-            workdir?: string;
-            name?: string;
-          },
-          {
-            success: boolean;
-            message: string;
-            name?: string;
-            port?: number;
-            pid?: number;
-            logFile?: string;
-            error?: string;
-          }
-        >({
-          description:
-            "Start a server/application in the background within the sandbox. Tracks running servers and provides process management.",
-          inputSchema: zodSchema(
-            z.object({
-              command: z.string(),
-              args: z.array(z.string()).optional(),
-              port: z.number(),
-              env: z.record(z.string(), z.string()).optional(),
-              workdir: z.string().optional(),
-              name: z.string().optional(),
-            })
-          ),
-          execute: startServer as any,
-        }),
-
-        "exec.stopServer": tool<
-          { name?: string; port?: number },
-          {
-            success: boolean;
-            message: string;
-            name?: string;
-            warning?: string;
-          }
-        >({
-          description: "Stop a running server by name or port.",
-          inputSchema: zodSchema(
-            z.object({
-              name: z.string().optional(),
-              port: z.number().optional(),
-            })
-          ),
-          execute: stopServer as any,
-        }),
-
-        "exec.listServers": tool<
-          {},
-          {
-            success: boolean;
-            servers: Array<{
-              name: string;
-              port: number;
-              pid?: number;
-              containerId: string;
-            }>;
-            count: number;
-          }
-        >({
-          description: "List all running servers in the sandbox.",
-          inputSchema: zodSchema(z.object({})),
-          execute: async () => {
-            const r = await listServers();
-            try {
-              console.log(chalk.gray(`[exec.listServers] count=${r.count}`));
-              for (const s of r.servers) {
-                console.log(
-                  chalk.gray(
-                    `  - ${s.name} port=${s.port} pid=${
-                      s.pid ?? "?"
-                    } container=${s.containerId}`
-                  )
-                );
-              }
-            } catch {}
-            return r as any;
-          },
-        }),
 
         // Process management
         "exec.findPidsByPort": tool<
@@ -630,24 +573,207 @@ export async function runAgent(
           ),
         }),
 
-        "exec.getServerLogs": tool<
-          { serverName: string; lines?: number },
+        // Google Drive tools
+        "pDrive.isAccountLinked": tool<{}, any>({
+          description: "Check if Google Drive account is linked and get authentication status. Use this before any other Google Drive operations.",
+          inputSchema: zodSchema(z.object({})),
+          execute: createSafeToolWrapper("pDrive.isAccountLinked", async () => {
+            const status = await isAccountLinked();
+            
+            if (status.isLinked) {
+              console.log(
+                chalk.green(
+                  `✅ Google Drive account linked (${status.email || 'unknown email'})`
+                )
+              );
+            } else {
+              console.log(
+                chalk.yellow(
+                  "⚠️ Google Drive account not linked. Use pDrive.linkAccount to connect."
+                )
+              );
+            }
+            
+            return status;
+          }),
+        }),
+
+        "pDrive.linkAccount": tool<{}, any>({
+          description: "Start Google Drive OAuth flow to link user's account. Returns authorization URL that user must visit to complete linking.",
+          inputSchema: zodSchema(z.object({})),
+          execute: createSafeToolWrapper("pDrive.linkAccount", async () => {
+            const result = await linkAccount();
+            
+            if (result.success && result.authUrl) {
+              console.log(
+                chalk.cyan(
+                  `🔗 Google Drive OAuth Flow Started\n` +
+                  `📋 Please visit this URL to authorize access:\n` +
+                  `${result.authUrl}\n\n` +
+                  `🌐 Callback server running on port ${result.callbackPort}\n` +
+                  `⏱️ Authorization will timeout in 5 minutes`
+                )
+              );
+            } else {
+              console.log(
+                chalk.red(
+                  `❌ Failed to start OAuth flow: ${result.message}`
+                )
+              );
+            }
+            
+            return result;
+          }),
+        }),
+
+        "pDrive.listFiles": tool<
           {
-            success: boolean;
-            logs?: string;
-            serverName?: string;
-            message?: string;
-          }
+            folderId?: string;
+            query?: string;
+            maxResults?: number;
+            orderBy?: string;
+          },
+          any
         >({
-          description: "Get logs from a running server.",
+          description: "List files and folders in Google Drive. Can filter by folder, search query, and limit results. Use this to explore the user's Google Drive structure.",
           inputSchema: zodSchema(
             z.object({
-              serverName: z.string(),
-              lines: z.number().optional(),
+              folderId: z.string().optional(),
+              query: z.string().optional(),
+              maxResults: z.number().optional(),
+              orderBy: z.string().optional()
             })
           ),
-          execute: async ({ serverName, lines }) =>
-            (await getServerLogs(serverName, lines)) as any,
+          execute: createSafeToolWrapper("pDrive.listFiles", async (args: any) => {
+            const result = await gdriveListFiles(args);
+            
+            if (result.success) {
+              console.log(
+                chalk.cyan(
+                  `📁 Found ${result.count} files in Google Drive` +
+                  (args.query ? ` (query: "${args.query}")` : '') +
+                  (args.folderId ? ` (folder: ${args.folderId})` : '')
+                )
+              );
+            } else if (result.needsAuth) {
+              console.log(
+                chalk.yellow(
+                  "🔐 Google Drive account not linked. Use pDrive.linkAccount first."
+                )
+              );
+            }
+            
+            return result;
+          }),
+        }),
+
+        "pDrive.readFile": tool<
+          {
+            fileId: string;
+            mimeType?: string;
+          },
+          any
+        >({
+          description: "Read content from a Google Drive file by its ID. Supports Google Docs, Sheets, regular text files, and more. Use pDrive.listFiles or pDrive.searchFiles to find file IDs first.",
+          inputSchema: zodSchema(
+            z.object({
+              fileId: z.string(),
+              mimeType: z.string().optional()
+            })
+          ),
+          execute: createSafeToolWrapper("pDrive.readFile", async (args: any) => {
+            const result = await gdriveReadFile(args);
+            
+            if (result.success) {
+              console.log(
+                chalk.green(
+                  `📖 Read file "${result.name}" (${result.contentLength} characters)`
+                )
+              );
+            } else if (result.needsAuth) {
+              console.log(
+                chalk.yellow(
+                  "🔐 Google Drive account not linked. Use pDrive.linkAccount first."
+                )
+              );
+            }
+            
+            return result;
+          }),
+        }),
+
+        "pDrive.writeFile": tool<
+          {
+            name: string;
+            content: string;
+            folderId?: string;
+            mimeType?: string;
+          },
+          any
+        >({
+          description: "Create a new file in Google Drive with the specified content. Can optionally specify a folder and MIME type.",
+          inputSchema: zodSchema(
+            z.object({
+              name: z.string(),
+              content: z.string(),
+              folderId: z.string().optional(),
+              mimeType: z.string().optional()
+            })
+          ),
+          execute: createSafeToolWrapper("pDrive.writeFile", async (args: any) => {
+            const result = await gdriveWriteFile(args);
+            
+            if (result.success) {
+              console.log(
+                chalk.green(
+                  `✅ Created file "${result.name}" in Google Drive`
+                )
+              );
+            } else if (result.needsAuth) {
+              console.log(
+                chalk.yellow(
+                  "🔐 Google Drive account not linked. Use pDrive.linkAccount first."
+                )
+              );
+            }
+            
+            return result;
+          }),
+        }),
+
+        "pDrive.searchFiles": tool<
+          {
+            query: string;
+            maxResults?: number;
+          },
+          any
+        >({
+          description: "Search for files in Google Drive by name or content. Returns files that match the search query.",
+          inputSchema: zodSchema(
+            z.object({
+              query: z.string(),
+              maxResults: z.number().optional()
+            })
+          ),
+          execute: createSafeToolWrapper("pDrive.searchFiles", async (args: any) => {
+            const result = await gdriveSearchFiles(args);
+            
+            if (result.success) {
+              console.log(
+                chalk.cyan(
+                  `🔍 Found ${result.count} files matching "${result.query}"`
+                )
+              );
+            } else if (result.needsAuth) {
+              console.log(
+                chalk.yellow(
+                  "🔐 Google Drive account not linked. Use pDrive.linkAccount first."
+                )
+              );
+            }
+            
+            return result;
+          }),
         }),
 
         // Internal browser tools
@@ -746,7 +872,10 @@ export async function runAgent(
               type: z.enum(["png", "jpeg"]).optional(),
             })
           ),
-          execute: screenshot as any,
+          execute: createSafeToolWrapper(
+            "browser.screenshot",
+            screenshot as any
+          ),
         }),
 
         "browser.click": tool<
@@ -765,7 +894,7 @@ export async function runAgent(
               timeout: z.number().optional(),
             })
           ),
-          execute: click as any,
+          execute: createSafeToolWrapper("browser.click", click as any),
         }),
 
         "browser.type": tool<
@@ -784,7 +913,7 @@ export async function runAgent(
               delay: z.number().optional(),
             })
           ),
-          execute: browserType as any,
+          execute: createSafeToolWrapper("browser.type", browserType as any),
         }),
 
         "browser.waitFor": tool<
@@ -804,7 +933,7 @@ export async function runAgent(
               visible: z.boolean().optional(),
             })
           ),
-          execute: waitFor as any,
+          execute: createSafeToolWrapper("browser.waitFor", waitFor as any),
         }),
 
         "browser.evaluate": tool<
@@ -823,7 +952,7 @@ export async function runAgent(
               script: z.string(),
             })
           ),
-          execute: evaluate as any,
+          execute: createSafeToolWrapper("browser.evaluate", evaluate as any),
         }),
 
         "browser.getContent": tool<
@@ -856,7 +985,7 @@ export async function runAgent(
         >({
           description: "Close the internal browser instance.",
           inputSchema: zodSchema(z.object({})),
-          execute: closeBrowser as any,
+          execute: createSafeToolWrapper("browser.close", closeBrowser as any),
         }),
 
         "browser.status": tool<
@@ -868,7 +997,10 @@ export async function runAgent(
         >({
           description: "Get the status of the internal browser.",
           inputSchema: zodSchema(z.object({})),
-          execute: getBrowserStatus as any,
+          execute: createSafeToolWrapper(
+            "browser.status",
+            getBrowserStatus as any
+          ),
         }),
 
         "docker.start": tool<
@@ -905,7 +1037,7 @@ export async function runAgent(
               network: z.string().optional(),
             })
           ),
-          execute: startContainer as any,
+          execute: createSafeToolWrapper("docker.start", startContainer as any),
         }),
         "docker.exec": tool<
           import("./tools/docker").ExecInContainerInput,
@@ -919,7 +1051,7 @@ export async function runAgent(
               workdir: z.string().optional(),
             })
           ),
-          execute: execInContainer as any,
+          execute: createSafeToolWrapper("docker.exec", execInContainer as any),
         }),
         "docker.stop": tool<
           import("./tools/docker").StopContainerInput,
@@ -932,8 +1064,113 @@ export async function runAgent(
               remove: z.boolean().optional(),
             })
           ),
-          execute: stopContainer as any,
+          execute: createSafeToolWrapper("docker.stop", stopContainer as any),
         }),
+
+        "docker.getCurrentContainer": tool<{}, unknown>({
+          description:
+            "Get information about the current container the agent is running in, including network settings and port bindings.",
+          inputSchema: zodSchema(z.object({})),
+          execute: createSafeToolWrapper(
+            "docker.getCurrentContainer",
+            getCurrentContainer as any
+          ),
+        }),
+
+        "docker.connectToNetwork": tool<
+          import("./tools/docker").ConnectToNetworkInput,
+          { ok: boolean; message: string }
+        >({
+          description:
+            "Connect a container to a Docker network with optional aliases.",
+          inputSchema: zodSchema(
+            z.object({
+              containerId: z.string(),
+              networkName: z.string(),
+              aliases: z.array(z.string()).optional(),
+            })
+          ),
+          execute: createSafeToolWrapper(
+            "docker.connectToNetwork",
+            connectToNetwork as any
+          ),
+        }),
+
+        "docker.disconnectFromNetwork": tool<
+          { containerId: string; networkName: string },
+          { ok: boolean; message: string }
+        >({
+          description: "Disconnect a container from a Docker network.",
+          inputSchema: zodSchema(
+            z.object({
+              containerId: z.string(),
+              networkName: z.string(),
+            })
+          ),
+          execute: createSafeToolWrapper(
+            "docker.disconnectFromNetwork",
+            async (args) =>
+              disconnectFromNetwork(args.containerId, args.networkName)
+          ),
+        }),
+
+        "docker.listNetworks": tool<{}, unknown>({
+          description: "List all Docker networks available on the system.",
+          inputSchema: zodSchema(z.object({})),
+          execute: createSafeToolWrapper(
+            "docker.listNetworks",
+            listNetworks as any
+          ),
+        }),
+
+        "docker.createNetwork": tool<
+          { name: string; driver?: string },
+          { ok: boolean; id: string; message: string }
+        >({
+          description:
+            "Create a new Docker network with specified name and driver (default: bridge).",
+          inputSchema: zodSchema(
+            z.object({
+              name: z.string(),
+              driver: z.string().optional(),
+            })
+          ),
+          execute: createSafeToolWrapper("docker.createNetwork", async (args) =>
+            createNetwork(args.name, args.driver)
+          ),
+        }),
+
+        "docker.restartWithPorts": tool<
+          {
+            containerId: string;
+            ports: Array<{
+              hostPort: number;
+              containerPort: number;
+              protocol?: "tcp" | "udp";
+            }>;
+          },
+          { ok: boolean; id: string; name: string; message: string }
+        >({
+          description:
+            "Restart a container with new port bindings. This stops the current container and creates a new one with the specified port mappings.",
+          inputSchema: zodSchema(
+            z.object({
+              containerId: z.string(),
+              ports: z.array(
+                z.object({
+                  hostPort: z.number(),
+                  containerPort: z.number(),
+                  protocol: z.enum(["tcp", "udp"]).optional(),
+                })
+              ),
+            })
+          ),
+          execute: createSafeToolWrapper(
+            "docker.restartWithPorts",
+            restartContainerWithPorts as any
+          ),
+        }),
+
         "hbrowser.session.create": tool<
           import("./tools/hyperbrowser").CreateSessionInput,
           { id: string; wsEndpoint: string }
@@ -949,14 +1186,20 @@ export async function runAgent(
                 .optional(),
             })
           ),
-          execute: createSession as any,
+          execute: createSafeToolWrapper(
+            "hbrowser.session.create",
+            createSession as any
+          ),
         }),
         "hbrowser.session.stop": tool<{ sessionId: string }, { ok: true }>({
           description: "Stop a Hyperbrowser session",
           inputSchema: zodSchema(z.object({ sessionId: z.string() })),
-          execute: async (args) => ({
-            ok: (await stopSession(args.sessionId)).ok as true,
-          }),
+          execute: createSafeToolWrapper(
+            "hbrowser.session.stop",
+            async (args) => ({
+              ok: (await stopSession(args.sessionId)).ok as true,
+            })
+          ),
         }),
         "hbrowser.navigate": tool<
           import("./tools/hyperbrowser").NavigateInput,
@@ -967,12 +1210,15 @@ export async function runAgent(
           inputSchema: zodSchema(
             z.object({ sessionId: z.string(), url: z.string().url() })
           ),
-          execute: navigate as any,
+          execute: createSafeToolWrapper("hbrowser.navigate", navigate as any),
         }),
         "context7.search": tool<{ query: string }, unknown>({
           description: "Search libraries on Context7",
           inputSchema: zodSchema(z.object({ query: z.string() })),
-          execute: context7Search as any,
+          execute: createSafeToolWrapper(
+            "context7.search",
+            context7Search as any
+          ),
         }),
         "context7.getDocs": tool<
           {
@@ -992,12 +1238,18 @@ export async function runAgent(
               tokens: z.number().optional(),
             })
           ),
-          execute: context7GetDocs as any,
+          execute: createSafeToolWrapper(
+            "context7.getDocs",
+            context7GetDocs as any
+          ),
         }),
         "docs.fetchUrl": tool<{ url: string }, { url: string; text: string }>({
           description: "Fetch raw text from a URL if Context7 not available",
           inputSchema: zodSchema(z.object({ url: z.string().url() })),
-          execute: fetchDocsByUrl as any,
+          execute: createSafeToolWrapper(
+            "docs.fetchUrl",
+            fetchDocsByUrl as any
+          ),
         }),
 
         // Workspace grep search
@@ -1042,15 +1294,44 @@ export async function runAgent(
             }) => grepWorkspace({ pattern, path, ignoreCase, maxResults })
           ),
         }),
+
+        "exec.listProcesses": tool<{}, any>({
+          description: "List all running processes in the container",
+          inputSchema: zodSchema(z.object({})),
+          execute: createSafeToolWrapper("exec.listProcesses", async () => {
+            return await listAllProcesses();
+          }),
+        }),
+
+        "exec.getProcessInfo": tool<{ pid: number }, any>({
+          description: "Get detailed information about a specific process",
+          inputSchema: zodSchema(
+            z.object({
+              pid: z.number().describe("Process ID to get information for"),
+            })
+          ),
+          execute: createSafeToolWrapper(
+            "exec.getProcessInfo",
+            async (args: any) => {
+              return await getProcessInfo(args.pid);
+            }
+          ),
+        }),
       },
 
       onStepFinish({ toolCalls, toolResults }) {
+        // Enhanced messages are now handled directly in createSafeToolWrapper
+        // No need for additional progress indicator messages to avoid duplication
+
+        // Still collect tool execution data for the tool collector
+        const callMap = new Map();
         for (const call of toolCalls) {
-          console.log(chalk.yellow(`Tool called: ${call.toolName}`));
+          callMap.set(call.toolCallId, call);
+          // Tool collector registration is already handled in createSafeToolWrapper
         }
-        for (const res of toolResults) {
-          console.log(chalk.gray(`Tool finished: ${res.toolName}`));
-        }
+
+        // Tool completion is already handled in createSafeToolWrapper
+        // This callback is kept for potential future use but no longer shows duplicate messages
       },
       abortSignal: controller.signal,
     });
@@ -1100,4 +1381,7 @@ export async function runAgent(
 // Cleanup function for MCP clients
 export async function cleanup() {
   await mcpManager.cleanup();
+  progressIndicator.clearAll();
+  // Clean up tool collector to prevent memory leaks
+  toolCollector.cleanup(50); // Keep last 50 executions
 }

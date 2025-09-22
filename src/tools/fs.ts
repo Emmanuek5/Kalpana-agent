@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getActiveSandbox } from "../sandbox";
+import { generateText } from "ai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
 export interface WriteFileInput {
   relativePath: string; // relative to /workspace in the container and host volume
@@ -8,6 +10,19 @@ export interface WriteFileInput {
 }
 
 export interface ReadFileInput {
+  relativePath: string;
+  maxLines?: number; // If specified, limit the number of lines returned
+  startLine?: number; // Starting line number (1-based)
+  endLine?: number; // Ending line number (1-based)
+}
+
+export interface ReadFileChunkInput {
+  relativePath: string;
+  startLine: number; // 1-based line number
+  endLine: number; // 1-based line number
+}
+
+export interface FileSummaryInput {
   relativePath: string;
 }
 
@@ -40,6 +55,10 @@ export interface FileStatsInput {
   relativePath: string;
 }
 
+export interface LineCountInput {
+  relativePath: string;
+}
+
 function toHostPath(relativePath = "") {
   const { hostVolumePath } = getActiveSandbox();
   const p = path.resolve(hostVolumePath, relativePath);
@@ -55,10 +74,57 @@ export async function fsWriteFile({ relativePath, content }: WriteFileInput) {
   return { ok: true } as const;
 }
 
-export async function fsReadFile({ relativePath }: ReadFileInput) {
+export async function fsReadFile({
+  relativePath,
+  maxLines,
+  startLine,
+  endLine,
+}: ReadFileInput) {
   const target = toHostPath(relativePath);
   const text = await fs.readFile(target, "utf8");
-  return { text };
+  const lines = text.split("\n");
+  const totalLines = lines.length;
+
+  // If file is large (>1000 lines) and no specific range requested, return summary
+  if (totalLines > 1000 && !maxLines && !startLine && !endLine) {
+    const summary = await summarizeFile({ relativePath });
+    return {
+      summary: summary.summary,
+      totalLines,
+      relativePath,
+      path: relativePath,
+      isLargeFile: true,
+      message: `File is large (${totalLines} lines). Showing summary. Use fs.readFileChunk to read specific sections.`,
+    };
+  }
+
+  // Handle line range requests
+  let processedText = text;
+  let actualStartLine = 1;
+  let actualEndLine = totalLines;
+
+  if (startLine || endLine || maxLines) {
+    const start = Math.max(1, startLine || 1) - 1; // Convert to 0-based
+    const end = endLine
+      ? Math.min(totalLines, endLine)
+      : maxLines
+      ? Math.min(totalLines, start + maxLines)
+      : totalLines;
+
+    actualStartLine = start + 1;
+    actualEndLine = end;
+    processedText = lines.slice(start, end).join("\n");
+  }
+
+  return {
+    text: processedText,
+    relativePath,
+    path: relativePath,
+    totalLines,
+    startLine: actualStartLine,
+    endLine: actualEndLine,
+    isLargeFile: totalLines > 1000,
+  };
 }
 
 export async function fsListDir({
@@ -67,13 +133,34 @@ export async function fsListDir({
 }: ListDirInput) {
   const target = toHostPath(relativePath);
 
+  // Directories to ignore
+  const ignoredDirs = new Set([
+    "node_modules",
+    ".git",
+    ".next",
+    ".nuxt",
+    "dist",
+    "build",
+    ".cache",
+    ".vscode",
+    ".idea",
+    "__pycache__",
+    ".pytest_cache",
+    "venv",
+    ".venv",
+    "env",
+    ".env",
+  ]);
+
   if (!recursive) {
     const entries = await fs.readdir(target, { withFileTypes: true });
-    return entries.map((e) => ({
-      name: e.name,
-      type: e.isDirectory() ? "dir" : "file",
-      path: path.posix.join(relativePath, e.name),
-    }));
+    return entries
+      .filter((e) => !ignoredDirs.has(e.name))
+      .map((e) => ({
+        name: e.name,
+        type: e.isDirectory() ? "dir" : "file",
+        path: path.posix.join(relativePath, e.name),
+      }));
   }
 
   // Recursive listing
@@ -83,6 +170,11 @@ export async function fsListDir({
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
       for (const entry of entries) {
+        // Skip ignored directories
+        if (ignoredDirs.has(entry.name)) {
+          continue;
+        }
+
         const fullPath = path.join(dirPath, entry.name);
         const relativePath = path.posix.join(relativeBase, entry.name);
 
@@ -207,6 +299,216 @@ export async function fsStats({ relativePath }: FileStatsInput) {
     return {
       ok: false,
       error: `Failed to get stats for ${relativePath}: ${
+        (error as Error).message
+      }`,
+    };
+  }
+}
+
+// File summarization using AI sub-agent
+export async function summarizeFile({ relativePath }: FileSummaryInput) {
+  const target = toHostPath(relativePath);
+  const text = await fs.readFile(target, "utf8");
+  const lines = text.split("\n");
+  const totalLines = lines.length;
+
+  // Get file extension for context
+  const fileExt = path.extname(relativePath).toLowerCase();
+  const fileName = path.basename(relativePath);
+
+  // Create a sub-agent to analyze the file
+  try {
+    const openrouter = process.env.OPENROUTER_API_KEY
+      ? createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
+      : undefined;
+
+    if (!openrouter) {
+      throw new Error("OpenRouter API key not configured");
+    }
+
+    const model = openrouter(
+      process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini"
+    );
+
+    const { text: summary } = await generateText({
+      model,
+      prompt: `Analyze this ${fileExt} file "${fileName}" (${totalLines} lines) and provide a comprehensive summary:
+
+File content:
+${text}
+
+Please provide:
+1. **Purpose**: What this file does/contains
+2. **Structure**: Main sections, functions, classes, or components
+3. **Key Features**: Important functionality or notable patterns
+4. **Dependencies**: Imports, libraries, or external dependencies
+5. **Notable Details**: Any important implementation details, configurations, or patterns
+
+Keep the summary concise but informative. Focus on what a developer would need to know to understand and work with this file.`,
+    });
+
+    return {
+      success: true,
+      summary,
+      totalLines,
+      relativePath,
+      fileName,
+      fileType: fileExt,
+    };
+  } catch (error) {
+    // Fallback to basic analysis if AI fails
+    const basicSummary = createBasicSummary(
+      text,
+      fileName,
+      fileExt,
+      totalLines
+    );
+    return {
+      success: false,
+      summary: basicSummary,
+      totalLines,
+      relativePath,
+      fileName,
+      fileType: fileExt,
+      error: (error as Error).message,
+    };
+  }
+}
+
+// Fallback basic file analysis
+function createBasicSummary(
+  content: string,
+  fileName: string,
+  fileExt: string,
+  totalLines: number
+): string {
+  const lines = content.split("\n");
+  let summary = `File: ${fileName} (${totalLines} lines, ${fileExt} file)\n\n`;
+
+  // Basic analysis based on file type
+  if (
+    fileExt === ".ts" ||
+    fileExt === ".js" ||
+    fileExt === ".tsx" ||
+    fileExt === ".jsx"
+  ) {
+    const imports = lines.filter((line) =>
+      line.trim().startsWith("import")
+    ).length;
+    const functions = lines.filter(
+      (line) =>
+        line.includes("function ") ||
+        (line.includes("const ") && line.includes("=>"))
+    ).length;
+    const classes = lines.filter((line) =>
+      line.trim().startsWith("class ")
+    ).length;
+    const interfaces = lines.filter((line) =>
+      line.trim().startsWith("interface ")
+    ).length;
+
+    summary += `JavaScript/TypeScript file with:\n`;
+    summary += `- ${imports} import statements\n`;
+    summary += `- ${functions} functions/methods\n`;
+    if (classes > 0) summary += `- ${classes} classes\n`;
+    if (interfaces > 0) summary += `- ${interfaces} interfaces\n`;
+  } else if (fileExt === ".json") {
+    summary += `JSON configuration file\n`;
+    try {
+      const parsed = JSON.parse(content);
+      const keys = Object.keys(parsed);
+      summary += `- ${keys.length} top-level keys: ${keys
+        .slice(0, 5)
+        .join(", ")}${keys.length > 5 ? "..." : ""}\n`;
+    } catch {
+      summary += `- Contains JSON data (parsing failed)\n`;
+    }
+  } else if (fileExt === ".md") {
+    const headers = lines.filter((line) => line.trim().startsWith("#")).length;
+    summary += `Markdown document with ${headers} headers\n`;
+  } else {
+    summary += `Text file with ${totalLines} lines\n`;
+  }
+
+  return summary;
+}
+
+// Read specific chunk of a large file
+export async function fsReadFileChunk({
+  relativePath,
+  startLine,
+  endLine,
+}: ReadFileChunkInput) {
+  const target = toHostPath(relativePath);
+  const text = await fs.readFile(target, "utf8");
+  const lines = text.split("\n");
+  const totalLines = lines.length;
+
+  // Validate line numbers
+  const actualStartLine = Math.max(1, Math.min(startLine, totalLines));
+  const actualEndLine = Math.max(
+    actualStartLine,
+    Math.min(endLine, totalLines)
+  );
+
+  // Extract the requested chunk (convert to 0-based indexing)
+  const chunkLines = lines.slice(actualStartLine - 1, actualEndLine);
+  const chunkText = chunkLines.join("\n");
+
+  return {
+    text: chunkText,
+    relativePath,
+    path: relativePath,
+    startLine: actualStartLine,
+    endLine: actualEndLine,
+    totalLines,
+    chunkLines: chunkLines.length,
+    isChunk: true,
+  };
+}
+
+// Get line count for a file without reading full content
+export async function fsLineCount({ relativePath }: LineCountInput) {
+  const target = toHostPath(relativePath);
+
+  try {
+    const text = await fs.readFile(target, "utf8");
+    const lines = text.split("\n");
+    const totalLines = lines.length;
+
+    // Calculate file size info
+    const stats = await fs.stat(target);
+    const sizeKB = Math.round(stats.size / 1024);
+
+    // Determine reading strategy recommendation
+    let strategy = "direct";
+    let recommendation = "Use fs.readFile directly";
+
+    if (totalLines > 1000) {
+      strategy = "summarize_then_chunk";
+      recommendation =
+        "Use fs.summarize first, then fs.readChunk for specific sections";
+    } else if (totalLines > 100) {
+      strategy = "summarize_then_read";
+      recommendation =
+        "Use fs.summarize first, then fs.readFile with line ranges";
+    }
+
+    return {
+      ok: true,
+      relativePath,
+      totalLines,
+      sizeKB,
+      strategy,
+      recommendation,
+      isEmpty:
+        totalLines === 0 ||
+        (totalLines === 1 && (lines[0]?.trim() ?? "") === ""),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Failed to count lines in ${relativePath}: ${
         (error as Error).message
       }`,
     };

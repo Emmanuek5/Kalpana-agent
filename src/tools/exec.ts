@@ -34,12 +34,40 @@ export async function execCommand({
   args = [],
   workdir = "/root/workspace",
   env,
-  timeout = 30000,
+  timeout = 120000, // 2 minutes default timeout
 }: ExecCommandInput) {
-  const { containerId } = getActiveSandbox();
+  const { containerId, containerVolumePath } = getActiveSandbox();
 
-  // Prepare command array
-  const cmd = [command, ...args];
+  // Prepare command array - split command if it contains spaces and no args provided
+  let cmd: string[];
+  if (args.length === 0 && command.includes(" ")) {
+    // Split the command string into parts
+    cmd = command.trim().split(/\s+/);
+  } else {
+    cmd = [command, ...args];
+  }
+
+  // Convert relative workdir to absolute path within container
+  let absoluteWorkdir = workdir;
+  if (workdir && !workdir.startsWith("/")) {
+    // If workdir is relative, make it relative to the container volume path
+    absoluteWorkdir = `${containerVolumePath}/${workdir}`;
+  }
+
+  // Validate that the working directory exists before execution
+  try {
+    const checkResult = await execInContainer({
+      containerId,
+      cmd: ["test", "-d", absoluteWorkdir],
+      workdir: "/",
+    });
+    // If the directory doesn't exist, fall back to the container volume path
+  } catch (error) {
+    console.warn(
+      `Working directory ${absoluteWorkdir} doesn't exist, using ${containerVolumePath}`
+    );
+    absoluteWorkdir = containerVolumePath;
+  }
 
   // Add environment variables if provided
   if (env) {
@@ -49,17 +77,26 @@ export async function execCommand({
     cmd.unshift("env", ...envArray);
   }
 
+  // Detect if this is likely a background/continuous process
+  const cmdString = cmd.join(" ");
+  const isLikelyBackground =
+    cmdString.includes("&") ||
+    cmdString.includes("server") ||
+    cmdString.includes("serve") ||
+    cmdString.includes("dev") ||
+    cmdString.includes("start") ||
+    !!cmdString.match(/\b(node|bun|npm|yarn|python)\s+.*\.(js|ts|py)/) ||
+    cmdString.includes("http.server");
+
   try {
     const startTime = Date.now();
-    const result = await Promise.race([
-      execInContainer({ containerId, cmd, workdir }),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Command timed out after ${timeout}ms`)),
-          timeout
-        )
-      ),
-    ]);
+    const result = await execInContainer({
+      containerId,
+      cmd,
+      workdir: absoluteWorkdir,
+      timeout,
+      background: isLikelyBackground,
+    });
 
     const duration = Date.now() - startTime;
 
@@ -68,6 +105,10 @@ export async function execCommand({
       output: result.output,
       duration,
       command: cmd.join(" "),
+      pid: result.pid,
+      isBackground: result.isBackground,
+      timedOut: result.timedOut,
+      isLongRunning: result.isLongRunning,
     };
   } catch (error) {
     return {
@@ -87,7 +128,29 @@ export async function startServer({
   workdir = "/root/workspace",
   name,
 }: StartServerInput) {
-  const { containerId } = getActiveSandbox();
+  const { containerId, containerVolumePath } = getActiveSandbox();
+
+  // Convert relative workdir to absolute path within container
+  let absoluteWorkdir = workdir;
+  if (workdir && !workdir.startsWith("/")) {
+    // If workdir is relative, make it relative to the container volume path
+    absoluteWorkdir = `${containerVolumePath}/${workdir}`;
+  }
+
+  // Validate that the working directory exists before execution
+  try {
+    const checkResult = await execInContainer({
+      containerId,
+      cmd: ["test", "-d", absoluteWorkdir],
+      workdir: "/",
+    });
+    // If the directory doesn't exist, fall back to the container volume path
+  } catch (error) {
+    console.warn(
+      `Working directory ${absoluteWorkdir} doesn't exist, using ${containerVolumePath}`
+    );
+    absoluteWorkdir = containerVolumePath;
+  }
 
   // Generate server name if not provided
   const serverName = name || `server-${port}`;
@@ -133,7 +196,11 @@ export async function startServer({
   }
 
   try {
-    const result = await execInContainer({ containerId, cmd, workdir });
+    const result = await execInContainer({
+      containerId,
+      cmd,
+      workdir: absoluteWorkdir,
+    });
     const pid = parseInt(result.output.trim());
 
     if (isNaN(pid)) {
@@ -327,8 +394,16 @@ export async function findPidsByPort(port: number): Promise<{
   }
 
   const portStr = String(port);
-  // Try ss
+
+  // Try ss (modern tool, preferred)
   try {
+    // First check if ss is available
+    await execInContainer({
+      containerId,
+      cmd: ["which", "ss"],
+      workdir: "/",
+    });
+
     const res = await execInContainer({
       containerId,
       cmd: [
@@ -339,10 +414,19 @@ export async function findPidsByPort(port: number): Promise<{
     });
     const pids = parsePids(res.output);
     if (pids.length > 0) return { success: true, pids, method: "ss" };
-  } catch {}
+  } catch {
+    // ss not available or failed, continue to next method
+  }
 
-  // Try netstat
+  // Try netstat (traditional tool)
   try {
+    // First check if netstat is available
+    await execInContainer({
+      containerId,
+      cmd: ["which", "netstat"],
+      workdir: "/",
+    });
+
     const res = await execInContainer({
       containerId,
       cmd: [
@@ -353,7 +437,27 @@ export async function findPidsByPort(port: number): Promise<{
     });
     const pids = parsePids(res.output);
     if (pids.length > 0) return { success: true, pids, method: "netstat" };
-  } catch {}
+  } catch {
+    // netstat not available or failed, continue to next method
+  }
+
+  // Try lsof (if available)
+  try {
+    await execInContainer({
+      containerId,
+      cmd: ["which", "lsof"],
+      workdir: "/",
+    });
+
+    const res = await execInContainer({
+      containerId,
+      cmd: ["sh", "-lc", `lsof -i :${portStr} -t 2>/dev/null || true`],
+    });
+    const pids = parsePids(res.output);
+    if (pids.length > 0) return { success: true, pids, method: "lsof" };
+  } catch {
+    // lsof not available or failed, continue to next method
+  }
 
   // Fallback: /proc scan for LISTEN sockets
   try {
@@ -364,13 +468,39 @@ export async function findPidsByPort(port: number): Promise<{
         "sh",
         "-lc",
         // Find processes whose tcp/tcp6 tables have a LISTEN entry on the port
-        `for f in /proc/[0-9]*/net/tcp*; do awk 'NR>1 && $4=="0A" && index($2, ":${hex}")>0 {print FILENAME}' "$f"; done | awk -F/ '{print $3}' | sort -u`,
+        `for f in /proc/[0-9]*/net/tcp*; do [ -r "$f" ] && awk 'NR>1 && $4=="0A" && index($2, ":${hex}")>0 {print FILENAME}' "$f" 2>/dev/null; done | awk -F/ '{print $3}' | sort -u || true`,
       ],
     });
     const pids = parsePids(res.output);
     return { success: true, pids, method: "/proc" };
   } catch (error) {
-    return { success: false, pids: [], error: (error as Error).message };
+    // Last resort: Check if port is responding
+    try {
+      const testRes = await execInContainer({
+        containerId,
+        cmd: [
+          "sh",
+          "-lc",
+          `timeout 1 bash -c "</dev/tcp/localhost/${portStr}" 2>/dev/null && echo "PORT_OPEN" || echo "PORT_CLOSED"`,
+        ],
+      });
+
+      if (testRes.output.includes("PORT_OPEN")) {
+        // Port is open but we can't find the process
+        return {
+          success: true,
+          pids: [],
+          method: "port-test",
+          error: "Port is in use but process not found",
+        };
+      }
+    } catch {}
+
+    return {
+      success: false,
+      pids: [],
+      error: `No method available to check port ${port}. Install net-tools, iproute2, or lsof.`,
+    };
   }
 }
 
@@ -484,6 +614,166 @@ export async function killPid({
   }
 }
 
+export async function listAllProcesses(): Promise<{
+  success: boolean;
+  processes: Array<{
+    pid: number;
+    ppid: number;
+    command: string;
+    cpu?: string;
+    memory?: string;
+    user?: string;
+  }>;
+  error?: string;
+}> {
+  const { containerId } = getActiveSandbox();
+
+  try {
+    // Try ps with extended format
+    const result = await execInContainer({
+      containerId,
+      cmd: ["ps", "aux"],
+      workdir: "/",
+    });
+
+    const lines = result.output.split("\n").filter((line) => line.trim());
+    const processes: Array<{
+      pid: number;
+      ppid: number;
+      command: string;
+      cpu?: string;
+      memory?: string;
+      user?: string;
+    }> = [];
+
+    // Skip header line
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i]?.trim();
+      if (!line) continue;
+
+      // Parse ps aux output: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+      const parts = line.split(/\s+/);
+      if (parts.length >= 11) {
+        const pid = parseInt(parts[1]!);
+        if (!isNaN(pid) && parts[0] && parts[1] && parts[2] && parts[3]) {
+          processes.push({
+            pid,
+            ppid: 0, // ps aux doesn't show PPID
+            user: parts[0],
+            cpu: parts[2],
+            memory: parts[3],
+            command: parts.slice(10).join(" "),
+          });
+        }
+      }
+    }
+
+    return { success: true, processes };
+  } catch (error) {
+    // Fallback to simple ps
+    try {
+      const result = await execInContainer({
+        containerId,
+        cmd: ["ps", "-e"],
+        workdir: "/",
+      });
+
+      const lines = result.output.split("\n").filter((line) => line.trim());
+      const processes: Array<{
+        pid: number;
+        ppid: number;
+        command: string;
+      }> = [];
+
+      // Skip header line
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i]?.trim();
+        if (!line) continue;
+
+        const parts = line.split(/\s+/);
+        if (parts.length >= 4) {
+          const pid = parseInt(parts[0]!);
+          if (!isNaN(pid) && parts[0] && parts[3]) {
+            processes.push({
+              pid,
+              ppid: 0,
+              command: parts.slice(3).join(" "),
+            });
+          }
+        }
+      }
+
+      return { success: true, processes };
+    } catch (fallbackError) {
+      return {
+        success: false,
+        processes: [],
+        error: (fallbackError as Error).message,
+      };
+    }
+  }
+}
+
+export async function getProcessInfo(pid: number): Promise<{
+  success: boolean;
+  process?: {
+    pid: number;
+    ppid: number;
+    command: string;
+    status?: string;
+    cpu?: string;
+    memory?: string;
+    startTime?: string;
+  };
+  error?: string;
+}> {
+  const { containerId } = getActiveSandbox();
+
+  try {
+    const result = await execInContainer({
+      containerId,
+      cmd: [
+        "ps",
+        "-p",
+        pid.toString(),
+        "-o",
+        "pid,ppid,command,stat,%cpu,%mem,lstart",
+      ],
+      workdir: "/",
+    });
+
+    const lines = result.output.split("\n").filter((line) => line.trim());
+    if (lines.length < 2) {
+      return { success: false, error: `Process ${pid} not found` };
+    }
+
+    const line = lines[1]?.trim();
+    if (!line) {
+      return { success: false, error: `Process ${pid} output format error` };
+    }
+    const parts = line.split(/\s+/);
+
+    if (parts.length >= 6 && parts[0] && parts[1]) {
+      return {
+        success: true,
+        process: {
+          pid: parseInt(parts[0]),
+          ppid: parseInt(parts[1]),
+          command: parts.slice(2, -4).join(" "),
+          status: parts[parts.length - 4],
+          cpu: parts[parts.length - 3],
+          memory: parts[parts.length - 2],
+          startTime: parts[parts.length - 1],
+        },
+      };
+    }
+
+    return { success: false, error: "Could not parse process information" };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
 export async function freePort({
   port,
   timeoutMs = 3000,
@@ -545,4 +835,95 @@ export async function freePort({
     error:
       remaining.length === 0 ? undefined : "Some processes could not be killed",
   };
+}
+
+export async function getProcessLogs(pid: number, lines: number = 50) {
+  const { containerId } = getActiveSandbox();
+
+  try {
+    // Get process information first
+    const processInfo = await execInContainer({
+      containerId,
+      cmd: ["ps", "-p", pid.toString(), "-o", "pid,ppid,cmd", "--no-headers"],
+    });
+
+    if (!processInfo.output.trim()) {
+      return {
+        success: false,
+        error: `Process with PID ${pid} not found`,
+        pid,
+      };
+    }
+
+    // Check if process is still running
+    let isRunning = false;
+    try {
+      const statusResult = await execInContainer({
+        containerId,
+        cmd: ["kill", "-0", pid.toString()],
+      });
+      isRunning = statusResult.output.trim() === "";
+    } catch (e) {
+      isRunning = false;
+    }
+
+    let logs = "";
+
+    // Try to get process environment and file descriptors info
+    try {
+      const fdResult = await execInContainer({
+        containerId,
+        cmd: ["ls", "-la", `/proc/${pid}/fd/`],
+      });
+
+      if (fdResult.output.trim()) {
+        logs += "📁 Process file descriptors:\n" + fdResult.output + "\n\n";
+      }
+    } catch (e) {
+      // Ignore fd reading errors
+    }
+
+    // Get process details
+    try {
+      const statusResult = await execInContainer({
+        containerId,
+        cmd: ["cat", `/proc/${pid}/status`],
+      });
+
+      if (statusResult.output.trim()) {
+        logs += "📊 Process status:\n" + statusResult.output + "\n\n";
+      }
+    } catch (e) {
+      // Ignore status reading errors
+    }
+
+    // Try to get recent system logs that might be related
+    try {
+      const journalResult = await execInContainer({
+        containerId,
+        cmd: ["dmesg", "|", "tail", "-" + lines.toString()],
+      });
+
+      if (journalResult.output.trim()) {
+        logs += "📋 Recent system logs:\n" + journalResult.output + "\n\n";
+      }
+    } catch (e) {
+      // Ignore journal errors
+    }
+
+    return {
+      success: true,
+      pid,
+      isRunning,
+      processInfo: processInfo.output.trim(),
+      logs: logs || "No detailed logs available for this process",
+      message: isRunning ? "Process is running" : "Process has stopped",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to get logs for PID ${pid}: ${(error as Error).message}`,
+      pid,
+    };
+  }
 }

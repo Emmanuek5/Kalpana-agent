@@ -1,0 +1,83 @@
+# Multi-runtime container with Node.js, Bun, Python, and essential tools
+FROM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_VERSION=20
+ENV PYTHON_VERSION=3.11
+ENV BUN_INSTALL="/usr/local"
+
+# Update package lists and install prerequisites
+RUN apt-get update -qq && \
+    apt-get install -y -qq \
+    curl \
+    wget \
+    unzip \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    build-essential \
+    git \
+    net-tools \
+    procps \
+    iproute2 \
+    iputils-ping \
+    dnsutils \
+    vim \
+    nano \
+    htop \
+    tree \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python 3.11 and pip
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update -qq && \
+    apt-get install -y -qq \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for python commands
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Install Node.js 20 via NodeSource repository
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y -qq nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Bun globally
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.22"
+
+# Install UV for fast Python package management and install packages
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    . $HOME/.local/bin/env && \
+    uv pip install --system \
+    requests \
+    flask \
+    fastapi \
+    uvicorn && \
+    echo '. $HOME/.local/bin/env' >> /root/.bashrc
+
+# Create workspace directory
+RUN mkdir -p /root/workspace
+WORKDIR /root/workspace
+
+# Verify installations
+RUN echo "=== Multi-Runtime Container Ready ===" && \
+    echo "Node.js version:" && node --version && \
+    echo "npm version:" && npm --version && \
+    echo "Bun version:" && bun --version && \
+    echo "Python version:" && python --version && \
+    echo "pip version:" && pip --version && \
+    echo "UV version:" && . $HOME/.local/bin/env && uv --version && \
+    echo "Available system tools:" && \
+    which curl wget git ps netstat ss tree jq && \
+    echo "=== All Runtimes Ready ===" 
+
+# Set default command to keep container alive
+CMD ["/bin/bash", "-c", "while :; do sleep 3600; done"]

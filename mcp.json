@@ -1,7 +1,25 @@
 {
   "mcpServers": {
     "context7": {
-      "url": "https://mcp.context7.com/mcp"
-    }
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk-93250000-054c-4acc-b3bb-ed28ef644839"]
+    },
+    "deepwiki": {
+      "url": "https://mcp.deepwiki.com/sse"
+    },
+    
+  
+  "Fetch":{
+    "url":"https://remote.mcpservers.org/fetch/mcp",
+    "transport": "http"
+  },
+  "Sequential-Thinking":{
+    "url":"https://remote.mcpservers.org/sequentialthinking/mcp",
+    "transport": "http"
+  },
+  "Edge-pages":{
+    "url":"https://remote.mcpservers.org/edgeone-pages/mcp",
+    "transport": "http"
+  }
   }
 }

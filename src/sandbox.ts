@@ -1,8 +1,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { startContainer, stopContainer } from "./tools/docker";
+import { startContainer, stopContainer, execInContainer } from "./tools/docker";
 
-export type SandboxRuntime = "node" | "python";
+export type SandboxRuntime = "bun" | "node" | "python";
 
 interface SandboxState {
   containerId: string;
@@ -73,7 +73,9 @@ export async function launchSandbox(
     return activeSandbox;
   }
 
-  const image = runtime === "node" ? "node:20-bullseye" : "python:3.11-slim";
+  let image: string;
+  // Use single multi-runtime image for all runtimes
+  image = "ai-container:multi-runtime";
 
   const containerVolumePath = "/root/workspace";
 
@@ -90,6 +92,8 @@ export async function launchSandbox(
         mode: "rw",
       },
     ],
+    // Use host networking so all container ports are automatically available on host
+    network: "host",
   });
 
   activeSandbox = {
@@ -98,6 +102,9 @@ export async function launchSandbox(
     hostVolumePath: absHostPath,
     containerVolumePath,
   };
+
+  // Verify tools are available (everything is pre-installed)
+  await verifyTools(id);
 
   return activeSandbox;
 }
@@ -113,4 +120,107 @@ export async function shutdownSandbox() {
     activeSandbox = null;
   }
   return { ok: true } as const;
+}
+
+// Verify that essential tools are available (everything is pre-installed in multi-runtime image)
+
+// Verify that essential tools are available
+async function verifyTools(containerId: string): Promise<void> {
+  const commonTools = [
+    { cmd: "ps", desc: "process list" },
+    { cmd: "curl", desc: "HTTP client" },
+  ];
+
+  const networkTools = [
+    { cmd: "netstat", desc: "network statistics" },
+    { cmd: "ss", desc: "socket statistics" },
+  ];
+
+  // Check common tools
+  for (const tool of commonTools) {
+    try {
+      await execInContainer({
+        containerId,
+        cmd: ["which", tool.cmd],
+        workdir: "/",
+      });
+      console.log(`[sandbox] ✓ ${tool.cmd} available`);
+    } catch {
+      console.warn(`[sandbox] ✗ ${tool.cmd} not available (${tool.desc})`);
+    }
+  }
+
+  // Check network tools (at least one should be available)
+  let networkToolAvailable = false;
+  for (const tool of networkTools) {
+    try {
+      await execInContainer({
+        containerId,
+        cmd: ["which", tool.cmd],
+        workdir: "/",
+      });
+      console.log(`[sandbox] ✓ ${tool.cmd} available`);
+      networkToolAvailable = true;
+    } catch {
+      console.warn(`[sandbox] ✗ ${tool.cmd} not available (${tool.desc})`);
+    }
+  }
+
+  if (!networkToolAvailable) {
+    console.warn(`[sandbox] ⚠️ No network monitoring tools available`);
+  }
+
+  // Check runtime-specific tools and versions
+  await checkRuntimeVersions(containerId);
+}
+
+// Check versions of runtime tools
+async function checkRuntimeVersions(containerId: string): Promise<void> {
+  // Check Bun
+  try {
+    const bunVersion = await execInContainer({
+      containerId,
+      cmd: ["bun", "--version"],
+      workdir: "/",
+    });
+    console.log(`[sandbox] Bun version: ${bunVersion.output.trim()}`);
+  } catch (error) {
+    console.log(`[sandbox] Bun not available`);
+  }
+
+  // Check Node.js
+  try {
+    const nodeVersion = await execInContainer({
+      containerId,
+      cmd: ["node", "--version"],
+      workdir: "/",
+    });
+    console.log(`[sandbox] Node.js version: ${nodeVersion.output.trim()}`);
+  } catch (error) {
+    console.log(`[sandbox] Node.js not available`);
+  }
+
+  // Check npm
+  try {
+    const npmVersion = await execInContainer({
+      containerId,
+      cmd: ["npm", "--version"],
+      workdir: "/",
+    });
+    console.log(`[sandbox] npm version: ${npmVersion.output.trim()}`);
+  } catch (error) {
+    console.log(`[sandbox] npm not available`);
+  }
+
+  // Check Python
+  try {
+    const pythonVersion = await execInContainer({
+      containerId,
+      cmd: ["python3", "--version"],
+      workdir: "/",
+    });
+    console.log(`[sandbox] Python version: ${pythonVersion.output.trim()}`);
+  } catch (error) {
+    // Python not available, which is fine for non-Python runtimes
+  }
 }
