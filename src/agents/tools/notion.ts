@@ -31,7 +31,7 @@ export function buildNotionTools() {
         "Link a Notion account using an integration token. Get your token from https://www.notion.so/my-integrations",
       inputSchema: zodSchema(
         z.object({
-          token: z.string().describe("Notion integration token (starts with 'secret_')"),
+          token: z.string().describe("Notion integration token (starts with 'ntn_')"),
         })
       ),
       execute: createSafeToolWrapper(

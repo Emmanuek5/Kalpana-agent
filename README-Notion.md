@@ -22,7 +22,7 @@ This guide will help you set up Notion integration with the AI Container system.
 ### 2. Get Your Integration Token
 
 1. After creating the integration, you'll see the **"Internal Integration Token"**
-2. Click **"Show"** and copy the token (starts with `secret_`)
+2. Click **"Show"** and copy the token (starts with `ntn_`)
 3. **Keep this token secure** - it provides access to your Notion workspace
 
 ### 3. Configure Permissions
@@ -53,7 +53,7 @@ For each page or database you want the AI to access:
 Run the AI Container and use the following command:
 
 ```bash
-notion.linkAccount({ token: "secret_your_integration_token_here" })
+notion.linkAccount({ token: "ntn_your_integration_token_here" })
 ```
 
 ### 6. Verify Connection
