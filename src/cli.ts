@@ -12,6 +12,8 @@ import {
 import { formatResponse } from "./markdown.js";
 import fs from "node:fs/promises";
 import { loadEnvironment, validateConfig, configExists } from "./config.js";
+import { contextManager } from "./context-manager.js";
+import { calculateRemainingContext, wouldExceedContext } from "./token-counter.js";
 
 // Global error handlers to prevent application crashes
 process.on('uncaughtException', (error) => {
@@ -113,12 +115,20 @@ async function main() {
   }
 
   console.log(chalk.cyan("Kalpana (कल्पना) - AI Development Assistant"));
+  let history: ModelMessage[] = [];
+  let saveHistory = false;
+  let sessionId = `session_${Date.now()}`;
+
+  // Check for --save-history or --history flag
+  if (process.argv.includes("--save-history") || process.argv.includes("--history")) {
+    saveHistory = true;
+    console.log(chalk.blue("📝 History saving enabled"));
+  }
+
+  // Initialize context management
+  await contextManager.loadContext(sessionId);
+
   // Flags
-  const saveHistory =
-    process.argv.includes("--save-history") ||
-    process.argv.includes("--history");
-  const historyFile = process.env.HISTORY_FILE || "history.json";
-  // Use multi-runtime container (contains Node.js, Bun, and Python pre-installed)
   const runtime = "bun"; // Default runtime for container launch (all runtimes available)
   const hostVolumePath = parseSandboxPath();
   try {
@@ -156,16 +166,12 @@ async function main() {
   
   // Show sandbox path info
   const isCustomPath = process.argv.includes("--sandbox");
-  if (isCustomPath) {
-    console.log(chalk.blue(`📁 Using custom sandbox path: ${hostVolumePath}`));
-  }
-
   // No automatic MCP status output; use '/mcp' command to view
 
   console.log(chalk.cyan("Type your instruction. Ctrl+C to exit."));
-  const history: ModelMessage[] = [];
 
   // Helper: persist history to disk
+  const historyFile = `history_${sessionId}.json`;
   const persistHistory = async () => {
     try {
       await fs.writeFile(historyFile, JSON.stringify(history, null, 2), "utf8");
@@ -194,11 +200,14 @@ async function main() {
 
       console.log(chalk.gray("Stopping managed containers..."));
       const result = await stopAllManagedContainers({ remove: true });
-      if (result.stopped.length > 0) {
-        console.log(
-          chalk.gray(`Stopped ${result.stopped.length} managed container(s).`)
-        );
+      if (saveHistory && history.length > 0) {
+        await persistHistory().catch((historyError) => {
+          console.warn(chalk.yellow('⚠️ Failed to save history during cleanup:'), historyError.message);
+        });
       }
+
+      // Save context state
+      await contextManager.saveContext(sessionId);
 
       console.log(chalk.gray("Cleaning up MCP connections..."));
       await cleanupAgent();
@@ -300,12 +309,104 @@ async function main() {
       continue;
     }
 
+    // Context management commands
+    if (input.startsWith("/context")) {
+      const parts = input.split(" ");
+      const command = parts[1];
+
+      if (!command || command === "status") {
+        // Show context status
+        const stats = contextManager.getContextStats();
+        const { buildSystemPrompt } = await import("./agents/system");
+        const systemPrompt = await buildSystemPrompt();
+        const contextInfo = calculateRemainingContext(
+          history,
+          systemPrompt,
+          230000,
+          process.env.MODEL_ID || "openai/gpt-4o-mini"
+        );
+
+        console.log(chalk.cyan("Context Management Status:"));
+        console.log(`  📊 Current usage: ${contextInfo.used.toLocaleString()}/${230000} tokens (${contextInfo.percentage.toFixed(1)}%)`);
+        console.log(`  💾 Summarized segments: ${stats.segmentCount}`);
+        console.log(`  📝 Total summarized messages: ${stats.totalSummarizedMessages}`);
+        console.log(`  🔥 High importance: ${stats.importanceBreakdown.high}`);
+        console.log(`  📋 Medium importance: ${stats.importanceBreakdown.medium}`);
+        console.log(`  📄 Low importance: ${stats.importanceBreakdown.low}`);
+        console.log(`  🕒 Current messages: ${history.length}`);
+        
+      } else if (command === "search") {
+        // Search context
+        const query = parts.slice(2).join(" ");
+        if (!query) {
+          console.log(chalk.yellow("Usage: /context search <query>"));
+        } else {
+          const results = contextManager.searchContext(query);
+          console.log(chalk.cyan(`Context Search Results for "${query}":`));
+          if (results.length === 0) {
+            console.log(chalk.gray("  No matching segments found."));
+          } else {
+            for (const segment of results.slice(0, 5)) {
+              console.log(chalk.blue(`\n  Segment ${segment.id} (${segment.importance} importance):`));
+              console.log(`    ${segment.summary}`);
+              if (segment.keyPoints && segment.keyPoints.length > 0) {
+                console.log(chalk.gray("    Key points:"));
+                segment.keyPoints.slice(0, 3).forEach(point => {
+                  console.log(chalk.gray(`      • ${point}`));
+                });
+              }
+            }
+            if (results.length > 5) {
+              console.log(chalk.gray(`\n  ... and ${results.length - 5} more results`));
+            }
+          }
+        }
+        
+      } else if (command === "stats") {
+        // Detailed statistics
+        const stats = contextManager.getContextStats();
+        const { buildSystemPrompt } = await import("./agents/system");
+        const systemPrompt = await buildSystemPrompt();
+        const contextInfo = calculateRemainingContext(
+          history,
+          systemPrompt,
+          230000,
+          process.env.MODEL_ID || "openai/gpt-4o-mini"
+        );
+
+        console.log(chalk.cyan("Detailed Context Statistics:"));
+        console.log(`  📊 Token Usage:`);
+        console.log(`    Current: ${contextInfo.used.toLocaleString()} tokens`);
+        console.log(`    System prompt: ${contextInfo.systemTokens.toLocaleString()} tokens`);
+        console.log(`    Messages: ${contextInfo.messageTokens.toLocaleString()} tokens`);
+        console.log(`    Remaining: ${contextInfo.remaining.toLocaleString()} tokens`);
+        console.log(`    Usage: ${contextInfo.percentage.toFixed(2)}%`);
+        console.log(`  📝 Conversation:`);
+        console.log(`    Current messages: ${history.length}`);
+        console.log(`    Summarized segments: ${stats.segmentCount}`);
+        console.log(`    Total summarized messages: ${stats.totalSummarizedMessages}`);
+        console.log(`  🎯 Importance Breakdown:`);
+        console.log(`    High: ${stats.importanceBreakdown.high} segments`);
+        console.log(`    Medium: ${stats.importanceBreakdown.medium} segments`);
+        console.log(`    Low: ${stats.importanceBreakdown.low} segments`);
+        
+      } else {
+        console.log(chalk.yellow("Unknown context command. Available: status, search <query>, stats"));
+      }
+      
+      process.stdout.write("\n> ");
+      continue;
+    }
+
     if (input.trim() === "/help") {
       console.log(chalk.cyan("Available Commands:"));
       console.log(
         "  /processes   - List all processes in container (/ps for short)"
       );
       console.log("  /mcp         - Show MCP server status");
+      console.log("  /context     - Show context management status");
+      console.log("  /context search <query> - Search summarized context");
+      console.log("  /context stats - Show detailed context statistics");
       console.log("  /help        - Show this help message");
       console.log("");
       console.log(chalk.cyan("CLI Options:"));
@@ -384,6 +485,11 @@ async function main() {
         } catch (historyError: any) {
           console.warn(chalk.yellow('⚠️ Failed to save history:'), historyError.message);
         }
+      }
+
+      // Save context state periodically (every 5 messages)
+      if (history.length % 5 === 0) {
+        await contextManager.saveContext(sessionId);
       }
 
       // Format and display the response

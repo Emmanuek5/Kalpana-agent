@@ -21,6 +21,8 @@ import { buildNotionTools } from "./tools/notion";
 import { createSafeToolWrapper } from "./safeToolWrapper";
 import { buildGeminiTools } from "./tools/gemini";
 import { mcpManager } from "../mcp";
+import { contextManager } from "../context-manager.js";
+import { calculateRemainingContext } from "../token-counter.js";
 
 export async function runAgent(
   userInstruction: string,
@@ -29,6 +31,26 @@ export async function runAgent(
 ) {
   const model = openrouter(process.env.MODEL_ID || "openai/gpt-4o-mini");
   const system = await buildSystemPrompt();
+
+  // Filter and ensure messages are properly formatted as ModelMessage[]
+  const filteredHistory = history.filter((msg): msg is ModelMessage => {
+    return msg && typeof msg === 'object' && 'role' in msg && 'content' in msg &&
+           (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system' );
+  });
+
+  // Apply context management to keep within token limits
+  const managedHistory = await contextManager.manageContext(filteredHistory, system);
+  
+  // Check remaining context space
+  const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
+  const contextInfo = calculateRemainingContext(
+    managedHistory, 
+    system, 
+    230000, // 230k token limit
+    modelId
+  );
+  
+  // Context management happens silently in the background
 
   // Load MCP tools (already loaded at CLI startup, but read current set)
   const mcpTools = mcpManager.getTools();
@@ -63,14 +85,8 @@ export async function runAgent(
     ...wrappedMcpTools,
   } as const;
 
-  // Filter and ensure messages are properly formatted as ModelMessage[]
-  const filteredHistory = history.filter((msg): msg is ModelMessage => {
-    return msg && typeof msg === 'object' && 'role' in msg && 'content' in msg &&
-           (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system' );
-  });
-
   const allMessages: ModelMessage[] = [
-    ...filteredHistory,
+    ...managedHistory,
     { role: "user", content: userInstruction }
   ];
 

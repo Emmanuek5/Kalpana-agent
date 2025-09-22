@@ -94,6 +94,76 @@ kalpana-config mcp    # Opens ~/mcp.json in your default editor
 }
 ```
 
+#### Adding MCP Servers with Different Transports
+
+Kalpana supports three main transport methods for connecting to MCP servers, allowing flexibility based on your needs. The `transport` field in each server configuration specifies the method:
+
+- **SSE (Server-Sent Events)**: The default for lightweight remote connections. Use this for simple tool fetching from remote servers where you need quick, one-way communication without persistent sessions. Ideal for read-only or stateless tools.
+- **HTTP**: For streaming with session support. Use this for interactive or streaming tools that require bidirectional communication, such as those involving real-time updates or authenticated sessions.
+- **Stdio**: For local processes like npx commands. Use this for running local MCP servers directly on your machine, providing the fastest execution for tools that don't need remote access.
+
+To avoid tool name conflicts across servers, prefix tool calls with the server name (e.g., `mcp.servername.toolname`).
+
+**Practical Examples in `mcp.json`:**
+
+1. **SSE Transport (e.g., DeepWiki for documentation search)**:
+   ```json
+   {
+     "mcpServers": {
+       "deepwiki": {
+         "transport": "sse",
+         "url": "https://api.deepwiki.com/mcp",
+         "headers": {
+           "Authorization": "Bearer your-deepwiki-api-key"
+         }
+       }
+     }
+   }
+   ```
+   This connects to a remote DeepWiki server via SSE for fetching documentation tools. Authentication is handled via headers.
+
+2. **HTTP Transport (e.g., Context7 for advanced search)**:
+   ```json
+   {
+     "mcpServers": {
+       "context7": {
+         "transport": "http",
+         "url": "https://api.context7.com/mcp",
+         "headers": {
+           "X-API-Key": "your-context7-api-key"
+         }
+       }
+     }
+   }
+   ```
+   Use HTTP for Context7's interactive documentation tools that may involve streaming responses. Sessions are maintained for multi-step queries.
+
+3. **Stdio Transport (e.g., Local Filesystem Server)**:
+   ```json
+   {
+     "mcpServers": {
+       "filesystem": {
+         "transport": "stdio",
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"],
+         "env": {
+           "ALLOWED_PATHS": "/path/to/allowed/files"
+         }
+       }
+     }
+   }
+   ```
+   This runs a local filesystem MCP server via Stdio, perfect for file operations without network overhead.
+
+**Additional Notes:**
+- **Dynamic Loading**: Servers are loaded dynamically at runtime. Failed servers (e.g., due to connection errors or invalid configs) are ignored, and Kalpana continues with available tools.
+- **Error Handling**: Check the console for loading errors. Use the `/mcp` in-chat command to verify status.
+- **CLI Testing**: Test your MCP configuration independently with:
+  ```bash
+  bun src/mcp.ts --config ./mcp.json
+  ```
+  This command loads and lists available tools from your configured servers without starting the full Kalpana CLI.
+
 **Local Development Setup:**
 
 1. Create a `.env` file with:
@@ -249,3 +319,4 @@ bun run start --sandbox ../shared-workspace
 **Kalpana** - Where imagination meets creation in AI-powered development.
 
 This project was created using `bun init` in bun v1.2.15. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+
