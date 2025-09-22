@@ -10,8 +10,6 @@
     "deepwiki": {
       "url": "https://mcp.deepwiki.com/sse"
     },
-    
-  
   "Fetch":{
     "url":"https://remote.mcpservers.org/fetch/mcp",
     "transport": "http"

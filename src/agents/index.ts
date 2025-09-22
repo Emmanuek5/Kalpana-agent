@@ -57,6 +57,7 @@ export async function runAgent(
     ...buildHyperAgentTools(),
     ...buildHyperbrowserTools(),
     ...buildGDriveTools(),
+    ...buildGeminiTools(),
     ...buildNotionTools(),
 
     ...wrappedMcpTools,

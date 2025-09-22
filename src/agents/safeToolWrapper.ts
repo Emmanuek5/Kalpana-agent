@@ -130,9 +130,23 @@ export function getToolStartMessage(
     case "docker.getContainers":
       const filterText = arg.all ? " (including stopped)" : " (running only)";
       return `📋 Listing Docker containers${filterText}`;
-    // Puppeteer Browser
-    case "browser.runPuppeteerScript":
-      return `🌐 Running Puppeteer script in sandbox`;
+    // Browser Tools
+    case "browser.goToPage":
+      return `🌐 Navigating to ${chalk.cyan(arg.url)}`;
+    case "browser.click":
+      return `🖱️ Clicking element ${chalk.cyan(arg.selector)}`;
+    case "browser.type":
+      return `⌨️ Typing into ${chalk.cyan(arg.selector)}`;
+    case "browser.screenshot":
+      return `📸 Taking screenshot${arg.path ? ` to ${chalk.cyan(arg.path)}` : ''}`;
+    case "browser.waitForElement":
+      return `⏳ Waiting for element ${chalk.cyan(arg.selector)}`;
+    case "browser.getPageInfo":
+      return `📄 Getting page information`;
+    case "browser.evaluateScript":
+      return `🔧 Executing JavaScript in page`;
+    case "browser.close":
+      return `🚪 Closing browser`;
     // Notion
     case "notion.isLinked":
       return `🔗 Checking Notion account status`;
@@ -632,6 +646,48 @@ export function getToolCompletionMessage(
         )}`;
       }
       return `❌ Hyperbrowser navigation failed`;
+    // Browser completions
+    case "browser.goToPage":
+      if (result?.success && result?.title) {
+        return `✅ Navigated to page - ${chalk.gray(`"${result.title}"`)}`;
+      }
+      return `❌ Failed to navigate to page`;
+    case "browser.click":
+      if (result?.success) {
+        return `✅ Clicked element ${chalk.cyan(arg.selector)}`;
+      }
+      return `❌ Failed to click element`;
+    case "browser.type":
+      if (result?.success) {
+        return `✅ Typed text into ${chalk.cyan(arg.selector)}`;
+      }
+      return `❌ Failed to type text`;
+    case "browser.screenshot":
+      if (result?.success) {
+        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
+        return `✅ Screenshot ${location}`;
+      }
+      return `❌ Failed to take screenshot`;
+    case "browser.waitForElement":
+      if (result?.success) {
+        return `✅ Element ${chalk.cyan(arg.selector)} appeared`;
+      }
+      return `❌ Element did not appear`;
+    case "browser.getPageInfo":
+      if (result?.success && result?.title) {
+        return `✅ Page info: ${chalk.gray(`"${result.title}" - ${result.url}`)}`;
+      }
+      return `❌ Failed to get page info`;
+    case "browser.evaluateScript":
+      if (result?.success) {
+        return `✅ JavaScript executed successfully`;
+      }
+      return `❌ JavaScript execution failed`;
+    case "browser.close":
+      if (result?.success) {
+        return `✅ Browser closed`;
+      }
+      return `❌ Failed to close browser`;
     // Google Drive completions
     case "pDrive.isAccountLinked":
       if (result?.isLinked || result?.linked) {
@@ -799,6 +855,7 @@ export function getToolCompletionMessage(
 }
 
 // Enhanced wrapper to safely execute tool functions with comprehensive feedback
+// Enhanced wrapper to safely execute tool functions with comprehensive feedback
 export function createSafeToolWrapper<T extends (...args: any[]) => any>(
   toolName: string,
   toolFn: T
@@ -810,6 +867,13 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
 
     toolCollector.startExecution(executionId, toolName, args[0] || args);
 
+    // Show the start message
+    const startMessage = getToolStartMessage(toolName, args[0] || args);
+    if (startMessage) {
+      // Use process.stdout.write to allow for updating the same line
+      process.stdout.write(startMessage);
+    }
+
     try {
       const result = toolFn(...args);
 
@@ -817,22 +881,36 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
         return (result as Promise<any>)
           .then((res: any) => {
             toolCollector.completeExecution(executionId, res);
-            // Show only the completion message to save space
+            
+            // Update the start message with completion status
             const completionMessage = getToolCompletionMessage(
               toolName,
               args[0] || args,
               res
             );
-            if (completionMessage) {
-              console.log(chalk.green(completionMessage));
+            if (completionMessage && startMessage) {
+              // Clear the current line and write the completion message
+              process.stdout.write('\r\x1b[K' + completionMessage + '\n');
+            } else if (completionMessage) {
+              console.log(completionMessage);
+            } else if (startMessage) {
+              // If no completion message, just add a newline to the start message
+              process.stdout.write('\n');
             }
+            
             return res;
           })
           .catch((error: Error) => {
             toolCollector.failExecution(executionId, error);
-            console.error(
-              chalk.red(`Tool error [${toolName}]: ${error.message}`)
-            );
+            
+            const errorMessage = `❌ ${toolName} failed: ${error.message}`;
+            if (startMessage) {
+              // Clear the current line and write the error message
+              process.stdout.write('\r\x1b[K' + chalk.red(errorMessage) + '\n');
+            } else {
+              console.error(chalk.red(errorMessage));
+            }
+            
             return {
               success: false,
               error: error.message,
@@ -842,22 +920,36 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
           });
       }
 
-      // For synchronous operations, just show the final message
+      // For synchronous operations
       toolCollector.completeExecution(executionId, result);
+      
       const completionMessage = getToolCompletionMessage(
         toolName,
         args[0] || args,
         result
       );
-      if (completionMessage) {
-        console.log(chalk.green(completionMessage));
+      if (completionMessage && startMessage) {
+        // Clear the current line and write the completion message
+        process.stdout.write('\r\x1b[K' + completionMessage + '\n');
+      } else if (completionMessage) {
+        console.log(completionMessage);
+      } else if (startMessage) {
+        // If no completion message, just add a newline to the start message
+        process.stdout.write('\n');
       }
+      
       return result;
     } catch (error) {
       toolCollector.failExecution(executionId, error as Error);
-      console.error(
-        chalk.red(`Tool error [${toolName}]: ${(error as Error).message}`)
-      );
+      
+      const errorMessage = `❌ ${toolName} failed: ${(error as Error).message}`;
+      if (startMessage) {
+        // Clear the current line and write the error message
+        process.stdout.write('\r\x1b[K' + chalk.red(errorMessage) + '\n');
+      } else {
+        console.error(chalk.red(errorMessage));
+      }
+      
       return {
         success: false,
         error: (error as Error).message,

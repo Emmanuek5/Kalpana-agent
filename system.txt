@@ -258,14 +258,18 @@ Your primary goal is to help users with software development, debugging, researc
 - Use docker.stop to manage container lifecycle
 
 **For web application testing**:
-- Use browser.runPuppeteerScript for browser automation with Puppeteer
-- **Available objects**: `browser`, `page`, and `puppeteer` are provided in script context
-- **Common methods**: `page.goto()`, `page.type()`, `page.click()`, `page.screenshot()`, `page.waitForSelector()`
-- **Note**: Use `page.type()` instead of `page.fill()` for input fields
-- **Error handling**: Browser scripts are safely sandboxed - errors won't crash the application
-- **Automatic cleanup**: Browser instances are automatically launched and closed
-- Test localhost applications, take screenshots, automate interactions
-- Perfect for end-to-end testing and UI validation
+- Use specific browser tools for safe, reliable automation
+- **Navigation**: `browser.goToPage({ url: "http://localhost:3000" })` - navigate to pages
+- **Interaction**: `browser.click({ selector: "button" })` - click elements
+- **Input**: `browser.type({ selector: "input", text: "hello" })` - type into fields
+- **Screenshots**: `browser.screenshot({ path: "/root/workspace/screenshot.png" })` - capture pages
+- **Waiting**: `browser.waitForElement({ selector: ".loading" })` - wait for elements
+- **Information**: `browser.getPageInfo()` - get page title and URL
+- **JavaScript**: `browser.evaluateScript({ script: "document.title" })` - run custom JS
+- **Cleanup**: `browser.close()` - close browser when done
+- **Error-proof**: Each tool is safely isolated - no script execution errors
+- **Persistent session**: Browser stays open between tool calls for efficiency
+- Perfect for end-to-end testing, UI validation, and web scraping
 
 **For Notion integration**:
 - Use notion.* tools for comprehensive Notion workspace management
