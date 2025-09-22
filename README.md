@@ -21,14 +21,16 @@
 
 ```bash
 # Install globally via npm
-npm install -g kalpana
+npm install -g kalpana-agent
 
 # Or via yarn
-yarn global add kalpana
+yarn global add kalpana-agent
 
 # Or via pnpm
-pnpm install -g kalpana
+pnpm install -g kalpana-agent
 ```
+
+**Note:** The package name is `kalpana-agent`, but the CLI commands are `kalpana` and `kalpana-interactive`.
 
 **Local Development Setup:**
 
