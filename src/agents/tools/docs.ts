@@ -41,3 +41,4 @@ export function buildDocsTools() {
     }),
   } as const;
 }
+

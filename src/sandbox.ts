@@ -79,7 +79,10 @@ export async function launchSandbox(
 
   const containerVolumePath = "/root/workspace";
 
-  const { id } = await startContainer({
+  // Check if we're on Windows (Docker Desktop) where host networking doesn't work the same
+  const isWindows = process.platform === 'win32';
+  
+  const containerConfig: any = {
     image,
     name: undefined,
     workdir: containerVolumePath,
@@ -92,9 +95,27 @@ export async function launchSandbox(
         mode: "rw",
       },
     ],
-    // Use host networking so all container ports are automatically available on host
-    network: "host",
-  });
+  };
+
+  if (isWindows) {
+    // On Windows, use explicit port mapping for common development ports
+    containerConfig.ports = [
+      { hostPort: 3000, containerPort: 3000 },
+      { hostPort: 3001, containerPort: 3001 },
+      { hostPort: 4000, containerPort: 4000 },
+      { hostPort: 5000, containerPort: 5000 },
+      { hostPort: 5173, containerPort: 5173 }, // Vite
+      { hostPort: 8000, containerPort: 8000 },
+      { hostPort: 8080, containerPort: 8080 },
+      { hostPort: 8888, containerPort: 8888 }, // Jupyter
+      { hostPort: 9000, containerPort: 9000 },
+    ];
+  } else {
+    // On Linux/macOS, use host networking for automatic port access
+    containerConfig.network = "host";
+  }
+
+  const { id } = await startContainer(containerConfig);
 
   activeSandbox = {
     containerId: id,

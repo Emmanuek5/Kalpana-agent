@@ -63,9 +63,16 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     uvicorn && \
     echo '. $HOME/.local/bin/env' >> /root/.bashrc
 
+# Install Puppeteer globally for browser automation
+RUN npm install -g puppeteer && \
+    echo "Puppeteer installed globally"
+
 # Create workspace directory
 RUN mkdir -p /root/workspace
 WORKDIR /root/workspace
+
+# Expose common development ports
+EXPOSE 3000 3001 4000 5000 5173 8000 8080 8888 9000
 
 # Verify installations
 RUN echo "=== Multi-Runtime Container Ready ===" && \
@@ -75,6 +82,7 @@ RUN echo "=== Multi-Runtime Container Ready ===" && \
     echo "Python version:" && python --version && \
     echo "pip version:" && pip --version && \
     echo "UV version:" && . $HOME/.local/bin/env && uv --version && \
+    echo "Puppeteer: installed globally" && \
     echo "Available system tools:" && \
     which curl wget git ps netstat ss tree jq && \
     echo "=== All Runtimes Ready ===" 

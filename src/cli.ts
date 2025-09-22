@@ -228,7 +228,7 @@ async function main() {
     }
     try {
       console.log(chalk.gray("Thinking..."));
-      console.log(history);
+
       const { text, messages } = await runAgent(input, history);
 
       history.splice(0, history.length, ...messages);

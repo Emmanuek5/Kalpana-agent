@@ -86,7 +86,12 @@ export async function execCommand({
     cmdString.includes("dev") ||
     cmdString.includes("start") ||
     !!cmdString.match(/\b(node|bun|npm|yarn|python)\s+.*\.(js|ts|py)/) ||
-    cmdString.includes("http.server");
+    cmdString.includes("http.server") ||
+    cmdString.includes("uvicorn") ||
+    cmdString.includes("flask") ||
+    cmdString.includes("fastapi") ||
+    !!cmdString.match(/\b(npm|yarn|bun)\s+(run\s+)?(dev|start|serve)/) ||
+    !!cmdString.match(/\bpython\s+-m\s+(http\.server|uvicorn|flask)/);
 
   try {
     const startTime = Date.now();

@@ -8,6 +8,7 @@ import {
   readFile,
   writeFile,
   searchFiles,
+  downloadFile,
 } from "../../tools/gdrive";
 import { createSafeToolWrapper } from "../safeToolWrapper";
 
@@ -152,6 +153,28 @@ export function buildGDriveTools() {
         "pDrive.searchFiles",
         async (args: any) => {
           return await searchFiles(args);
+        }
+      ),
+    }),
+
+    "pDrive.downloadFile": tool<
+      {
+        fileId: string;
+        relativePath: string;
+      },
+      any
+    >({
+      description: "Download a file from Google Drive to the sandbox workspace. Use this for media files (images, videos, audio, PDFs) that need to be analyzed with Gemini tools. After downloading, use gemini.analyzeFile or specific analysis tools.",
+      inputSchema: zodSchema(
+        z.object({
+          fileId: z.string().describe("Google Drive file ID to download"),
+          relativePath: z.string().describe("Path where to save the file in sandbox (e.g., 'downloads/image.jpg')")
+        })
+      ),
+      execute: createSafeToolWrapper(
+        "pDrive.downloadFile",
+        async (args: any) => {
+          return await downloadFile(args);
         }
       ),
     }),

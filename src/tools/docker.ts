@@ -231,8 +231,11 @@ export async function execInContainer({
 
   // For background processes, we need to track PIDs
   if (background || cmd.join(" ").includes("&")) {
+    // For background processes, use nohup and detach properly
+    const backgroundCmd = ["nohup", "sh", "-c", `${cmd.join(" ")} > /dev/null 2>&1 & echo $!`];
+    
     const exec = await container.exec({
-      Cmd: cmd,
+      Cmd: backgroundCmd,
       AttachStdout: true,
       AttachStderr: true,
       Tty: false,
@@ -241,27 +244,20 @@ export async function execInContainer({
 
     const stream = await exec.start({});
     const output = await streamToString(stream);
-
-    // Try to get the PID of the started process
+    
+    // The output should contain the PID of the background process
     let pid: number | undefined;
-    try {
-      const pidExec = await container.exec({
-        Cmd: ["pgrep", "-f", cmd[cmd.length - 1] || ""], // Get PID of the process
-        AttachStdout: true,
-        AttachStderr: false,
-        Tty: false,
-      });
-      const pidStream = await pidExec.start({});
-      const pidOutput = await streamToString(pidStream);
-      const pidMatch = pidOutput.trim().split("\n")[0];
-      if (pidMatch && !isNaN(parseInt(pidMatch))) {
-        pid = parseInt(pidMatch);
-      }
-    } catch (e) {
-      // Ignore PID lookup failures
+    const pidMatch = output.trim().split("\n").pop();
+    if (pidMatch && !isNaN(parseInt(pidMatch))) {
+      pid = parseInt(pidMatch);
     }
 
-    return { output, pid, isBackground: true };
+    // For background processes, return immediately with the PID
+    return { 
+      output: `Background process started with PID ${pid}. Use exec.getProcessLogs with PID to check status.`, 
+      pid, 
+      isBackground: true 
+    };
   }
 
   // For regular commands with timeout

@@ -32,14 +32,14 @@ export function buildExecTools() {
       }
     >({
       description:
-        "Execute a command inside the multi-runtime sandbox container. Available runtimes: node, npm, bun, python, pip, uv. Use for running scripts, installing packages, or general command execution.",
+        "Execute a command inside the multi-runtime sandbox container. Available runtimes: node, npm, bun, python, pip, uv. Use 'workdir' parameter to set working directory instead of 'cd && command'. Use for running scripts, installing packages, or general command execution.",
       inputSchema: zodSchema(
         z.object({
-          command: z.string(),
-          args: z.array(z.string()).optional(),
-          workdir: z.string().optional(),
-          env: z.record(z.string(), z.string()).optional(),
-          timeout: z.number().optional(),
+          command: z.string().describe("Command to execute"),
+          args: z.array(z.string()).optional().describe("Command arguments"),
+          workdir: z.string().optional().describe("Working directory (e.g., '/root/workspace/my-app') - use instead of 'cd && command'"),
+          env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
+          timeout: z.number().optional().describe("Timeout in milliseconds"),
         })
       ),
       execute: createSafeToolWrapper("exec.command", async (args: any) => {

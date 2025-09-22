@@ -363,9 +363,35 @@ export async function readFile({ fileId, mimeType }: GDriveReadFileInput) {
     });
 
     const file = metadata.data;
+    
+    // Check if this is a media file that should be downloaded instead of read
+    const isMediaFile = file.mimeType && (
+      file.mimeType.startsWith('image/') ||
+      file.mimeType.startsWith('video/') ||
+      file.mimeType.startsWith('audio/') ||
+      file.mimeType === 'application/pdf' ||
+      file.mimeType.startsWith('application/vnd.openxmlformats-') ||
+      file.mimeType.startsWith('application/msword') ||
+      file.mimeType.startsWith('application/vnd.ms-')
+    );
+    
+    if (isMediaFile) {
+      return {
+        success: false,
+        error: `This is a media file (${file.mimeType}). Use pDrive.download to download it to the sandbox, then use Gemini analysis tools (gemini.analyzeFile, gemini.analyzeImage, gemini.analyzePdf, etc.) to analyze it.`,
+        fileId,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size ? parseInt(file.size) : undefined,
+        modifiedTime: file.modifiedTime,
+        isMediaFile: true,
+        suggestedAction: 'Use pDrive.download followed by gemini.analyzeFile'
+      };
+    }
+    
     let content = '';
     
-    // Handle different file types
+    // Handle different file types (text/document files only)
     if (file.mimeType?.startsWith('application/vnd.google-apps.')) {
       // Google Workspace files need to be exported
       let exportMimeType = mimeType || 'text/plain';
@@ -515,6 +541,99 @@ export async function searchFiles({
       success: false,
       error: `Failed to search files: ${(error as Error).message}`,
       query
+    };
+  }
+}
+
+// Download file from Google Drive to sandbox
+export async function downloadFile({
+  fileId,
+  relativePath
+}: {
+  fileId: string;
+  relativePath: string;
+}) {
+  try {
+    const authStatus = await isAccountLinked();
+    if (!authStatus.isLinked) {
+      return {
+        success: false,
+        error: 'Google Drive account not linked. Use pDrive.linkAccount first.',
+        needsAuth: true
+      };
+    }
+
+    const drive = getDriveClient();
+    
+    // Get file metadata first
+    const metadata = await drive.files.get({
+      fileId,
+      fields: 'id,name,mimeType,size,modifiedTime'
+    });
+
+    const file = metadata.data;
+    
+    // Download the file
+    const response = await drive.files.get({
+      fileId,
+      alt: 'media'
+    }, {
+      responseType: 'stream'
+    });
+
+    // Import fs and path modules
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    
+    // Ensure the sandbox directory exists
+    const sandboxPath = process.env.SANDBOX_VOLUME_PATH || './.sandbox';
+    const fullPath = path.join(sandboxPath, relativePath);
+    const dirPath = path.dirname(fullPath);
+    
+    // Create directory if it doesn't exist
+    await fs.mkdir(dirPath, { recursive: true });
+    
+    // Write the file
+    const writeStream = await import('node:fs').then(fs => fs.createWriteStream(fullPath));
+    
+    return new Promise((resolve, reject) => {
+      response.data.pipe(writeStream);
+      
+      writeStream.on('finish', () => {
+        resolve({
+          success: true,
+          fileId,
+          name: file.name,
+          mimeType: file.mimeType,
+          size: file.size ? parseInt(file.size) : undefined,
+          modifiedTime: file.modifiedTime,
+          downloadedTo: relativePath,
+          fullPath,
+          message: `File downloaded to sandbox: ${relativePath}. You can now analyze it using Gemini tools like gemini.analyzeFile, gemini.analyzeImage, gemini.analyzePdf, etc.`
+        });
+      });
+      
+      writeStream.on('error', (error) => {
+        reject({
+          success: false,
+          error: `Failed to write file: ${error.message}`,
+          fileId
+        });
+      });
+      
+      response.data.on('error', (error: any) => {
+        reject({
+          success: false,
+          error: `Failed to download file: ${error.message}`,
+          fileId
+        });
+      });
+    });
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to download file: ${(error as Error).message}`,
+      fileId
     };
   }
 }

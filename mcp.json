@@ -1,8 +1,11 @@
 {
   "mcpServers": {
     "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk-93250000-054c-4acc-b3bb-ed28ef644839"]
+    "url":"https://mcp.context7.com/mcp",
+    "transport":"http",
+    "headers" :{
+         "CONTEXT7_API_KEY": "ctx7sk-93250000-054c-4acc-b3bb-ed28ef644839"
+    }
     },
     "deepwiki": {
       "url": "https://mcp.deepwiki.com/sse"

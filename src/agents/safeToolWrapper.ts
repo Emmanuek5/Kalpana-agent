@@ -127,35 +127,32 @@ export function getToolStartMessage(
       return `🔄 Restarting container ${chalk.cyan(
         (arg.containerId || "container").substring(0, 12)
       )} with new ports`;
-    // Internal Browser
-    case "browser.create":
-      return `🌐 Creating Internal Browser Agent`;
-    case "browser.navigate":
-      return `🌐 Using Internal Browser Agent - navigating to ${chalk.cyan(
-        arg.url || "page"
-      )}`;
-    case "browser.screenshot":
-      return `🌐 Using Internal Browser Agent - taking screenshot`;
-    case "browser.click":
-      return `🌐 Using Internal Browser Agent - clicking ${chalk.cyan(
-        arg.selector || "element"
-      )}`;
-    case "browser.type":
-      return `🌐 Using Internal Browser Agent - typing in ${chalk.cyan(
-        arg.selector || "element"
-      )}`;
-    case "browser.waitFor":
-      return `🌐 Using Internal Browser Agent - waiting for ${chalk.cyan(
-        arg.selector || "element"
-      )}`;
-    case "browser.evaluate":
-      return `🌐 Using Internal Browser Agent - executing JavaScript`;
-    case "browser.getContent":
-      return `🌐 Using Internal Browser Agent - getting page content`;
-    case "browser.close":
-      return `🌐 Closing Internal Browser Agent`;
-    case "browser.status":
-      return `🌐 Getting Internal Browser Agent status`;
+    // Puppeteer Browser
+    case "browser.runPuppeteerScript":
+      return `🌐 Running Puppeteer script in sandbox`;
+    // Notion
+    case "notion.isLinked":
+      return `🔗 Checking Notion account status`;
+    case "notion.linkAccount":
+      return `🔗 Linking Notion account`;
+    case "notion.unlinkAccount":
+      return `🔗 Unlinking Notion account`;
+    case "notion.createPage":
+      return `📄 Creating Notion page: ${chalk.cyan(arg.title || "page")}`;
+    case "notion.createDatabase":
+      return `🗃️ Creating Notion database: ${chalk.cyan(arg.title || "database")}`;
+    case "notion.queryDatabase":
+      return `🔍 Querying Notion database`;
+    case "notion.updatePage":
+      return `✏️ Updating Notion page`;
+    case "notion.getPage":
+      return `📄 Getting Notion page`;
+    case "notion.getDatabase":
+      return `🗃️ Getting Notion database`;
+    case "notion.search":
+      return `🔍 Searching Notion for: ${chalk.cyan(arg.query || "content")}`;
+    case "notion.addBlocks":
+      return `📝 Adding blocks to Notion page`;
     // Context7 / Docs
     case "context7.search":
       return `🔍 Searching the web for libraries: ${chalk.cyan(
@@ -183,10 +180,12 @@ export function getToolStartMessage(
     // Google Drive tools
     case "pDrive.isAccountLinked":
       return `🔗 Checking Google Drive account status`;
-    case "pDrive.linkAccount":
-      return `🔗 Linking Google Drive account`;
+    case "pDrive.searchFiles":
+      return "🔍 Searching Google Drive files...";
+    case "pDrive.downloadFile":
+      return "📥 Downloading file from Google Drive to sandbox...";
     case "pDrive.unlinkAccount":
-      return `🔗 Unlinking Google Drive account`;
+      return "🔓 Unlinking Google Drive account...";
     case "pDrive.listFiles":
       return `📁 Listing Google Drive files${
         arg.folderId ? ` in folder ${chalk.cyan(arg.folderId)}` : ""
@@ -680,6 +679,93 @@ export function getToolCompletionMessage(
         return `❌ Google Drive not linked - use pDrive.linkAccount first`;
       }
       return `❌ Google Drive search failed`;
+    // Notion completions
+    case "notion.isLinked":
+      if (result?.isLinked) {
+        return `✅ Notion account is linked and ready`;
+      }
+      return `❌ Notion account not linked - use notion.linkAccount to connect`;
+    case "notion.linkAccount":
+      if (result?.success) {
+        return `✅ Notion account linked successfully`;
+      }
+      return `❌ Failed to link Notion account - check your integration token`;
+    case "notion.unlinkAccount":
+      if (result?.success) {
+        return `✅ Notion account unlinked successfully`;
+      }
+      return `❌ Failed to unlink Notion account`;
+    case "notion.createPage":
+      if (result?.success && result?.pageId) {
+        const title = arg.title ? ` "${arg.title}"` : "";
+        return `✅ Created Notion page${title} - ${chalk.gray(
+          `ID: ${result.pageId.substring(0, 12)}...`
+        )}`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to create Notion page`;
+    case "notion.createDatabase":
+      if (result?.success && result?.databaseId) {
+        const title = arg.title ? ` "${arg.title}"` : "";
+        return `✅ Created Notion database${title} - ${chalk.gray(
+          `ID: ${result.databaseId.substring(0, 12)}...`
+        )}`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to create Notion database`;
+    case "notion.queryDatabase":
+      if (result?.success && result?.results) {
+        const count = result.results.length;
+        const more = result.hasMore ? " (more available)" : "";
+        return `✅ Queried Notion database - ${chalk.gray(
+          `${count} results${more}`
+        )}`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to query Notion database`;
+    case "notion.updatePage":
+      if (result?.success) {
+        return `✅ Updated Notion page successfully`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to update Notion page`;
+    case "notion.getPage":
+      if (result?.success && result?.page) {
+        return `✅ Retrieved Notion page successfully`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to get Notion page`;
+    case "notion.getDatabase":
+      if (result?.success && result?.database) {
+        return `✅ Retrieved Notion database successfully`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to get Notion database`;
+    case "notion.search":
+      if (result?.success && result?.results) {
+        const count = result.results.length;
+        const query = arg.query ? ` for "${arg.query}"` : "";
+        return `✅ Notion search completed${query} - ${chalk.gray(
+          `${count} results found`
+        )}`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Notion search failed`;
+    case "notion.addBlocks":
+      if (result?.success) {
+        const blockCount = arg.blocks?.length || 0;
+        return `✅ Added ${blockCount} block(s) to Notion page`;
+      } else if (result?.needsAuth) {
+        return `❌ Notion not linked - use notion.linkAccount first`;
+      }
+      return `❌ Failed to add blocks to Notion page`;
     default:
       if (toolName.startsWith("mcp.")) {
         const parts = toolName.split(".");
@@ -710,11 +796,6 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
 
     toolCollector.startExecution(executionId, toolName, args[0] || args);
 
-    const startMessage = getToolStartMessage(toolName, args[0] || args);
-    if (startMessage) {
-      console.log(chalk.blue(startMessage));
-    }
-
     try {
       const result = toolFn(...args);
 
@@ -722,6 +803,7 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
         return (result as Promise<any>)
           .then((res: any) => {
             toolCollector.completeExecution(executionId, res);
+            // Show only the completion message to save space
             const completionMessage = getToolCompletionMessage(
               toolName,
               args[0] || args,
@@ -746,6 +828,7 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
           });
       }
 
+      // For synchronous operations, just show the final message
       toolCollector.completeExecution(executionId, result);
       const completionMessage = getToolCompletionMessage(
         toolName,
