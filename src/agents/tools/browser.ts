@@ -8,7 +8,17 @@ import {
   waitForElement, 
   getPageInfo, 
   evaluateScript,
-  closeBrowser 
+  closeBrowser,
+  scrollTo,
+  getText,
+  getAttribute,
+  selectOption,
+  hover,
+  pressKey,
+  refresh,
+  goBack,
+  goForward,
+  getAllElements
 } from "../../tools/browser";
 import { createSafeToolWrapper } from "../safeToolWrapper";
 
@@ -122,6 +132,145 @@ export function buildBrowserTools() {
       description: "Close the browser instance to free resources.",
       inputSchema: zodSchema(z.object({})),
       execute: createSafeToolWrapper("browser.close", closeBrowser as any),
+    }),
+
+    "browser.scrollTo": tool<
+      { x?: number; y?: number; selector?: string; behavior?: string },
+      { success: boolean; error?: string }
+    >({
+      description: "Scroll to specific coordinates or element on the page.",
+      inputSchema: zodSchema(
+        z.object({
+          x: z.number().optional().describe("X coordinate to scroll to"),
+          y: z.number().optional().describe("Y coordinate to scroll to"),
+          selector: z.string().optional().describe("CSS selector of element to scroll to"),
+          behavior: z.enum(['auto', 'smooth']).optional().describe("Scroll behavior (default: smooth)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.scrollTo", scrollTo as any),
+    }),
+
+    "browser.getText": tool<
+      { selector: string; waitForSelector?: boolean; timeout?: number },
+      { success: boolean; text?: string; error?: string }
+    >({
+      description: "Get text content from an element using CSS selector.",
+      inputSchema: zodSchema(
+        z.object({
+          selector: z.string().describe("CSS selector for the element to get text from"),
+          waitForSelector: z.boolean().optional().describe("Wait for element to appear before getting text (default: true)"),
+          timeout: z.number().optional().describe("Wait timeout in milliseconds (default: 10000)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.getText", getText as any),
+    }),
+
+    "browser.getAttribute": tool<
+      { selector: string; attribute: string; waitForSelector?: boolean; timeout?: number },
+      { success: boolean; value?: string; error?: string }
+    >({
+      description: "Get attribute value from an element using CSS selector.",
+      inputSchema: zodSchema(
+        z.object({
+          selector: z.string().describe("CSS selector for the element"),
+          attribute: z.string().describe("Attribute name to get value from (e.g., 'href', 'src', 'class')"),
+          waitForSelector: z.boolean().optional().describe("Wait for element to appear before getting attribute (default: true)"),
+          timeout: z.number().optional().describe("Wait timeout in milliseconds (default: 10000)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.getAttribute", getAttribute as any),
+    }),
+
+    "browser.selectOption": tool<
+      { selector: string; value?: string; text?: string; index?: number; waitForSelector?: boolean; timeout?: number },
+      { success: boolean; error?: string }
+    >({
+      description: "Select an option from a dropdown/select element.",
+      inputSchema: zodSchema(
+        z.object({
+          selector: z.string().describe("CSS selector for the select element"),
+          value: z.string().optional().describe("Option value to select"),
+          text: z.string().optional().describe("Option text to select"),
+          index: z.number().optional().describe("Option index to select (0-based)"),
+          waitForSelector: z.boolean().optional().describe("Wait for element to appear before selecting (default: true)"),
+          timeout: z.number().optional().describe("Wait timeout in milliseconds (default: 10000)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.selectOption", selectOption as any),
+    }),
+
+    "browser.hover": tool<
+      { selector: string; waitForSelector?: boolean; timeout?: number },
+      { success: boolean; error?: string }
+    >({
+      description: "Hover over an element using CSS selector.",
+      inputSchema: zodSchema(
+        z.object({
+          selector: z.string().describe("CSS selector for the element to hover over"),
+          waitForSelector: z.boolean().optional().describe("Wait for element to appear before hovering (default: true)"),
+          timeout: z.number().optional().describe("Wait timeout in milliseconds (default: 10000)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.hover", hover as any),
+    }),
+
+    "browser.pressKey": tool<
+      { key: string; selector?: string; modifiers?: string[] },
+      { success: boolean; error?: string }
+    >({
+      description: "Press a key or key combination. Can focus on specific element first.",
+      inputSchema: zodSchema(
+        z.object({
+          key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')"),
+          selector: z.string().optional().describe("CSS selector to focus before pressing key"),
+          modifiers: z.array(z.string()).optional().describe("Modifier keys to hold (e.g., ['Control', 'Shift'])"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.pressKey", pressKey as any),
+    }),
+
+    "browser.refresh": tool<
+      {},
+      { success: boolean; error?: string }
+    >({
+      description: "Refresh the current page.",
+      inputSchema: zodSchema(z.object({})),
+      execute: createSafeToolWrapper("browser.refresh", refresh as any),
+    }),
+
+    "browser.goBack": tool<
+      {},
+      { success: boolean; error?: string }
+    >({
+      description: "Navigate back in browser history.",
+      inputSchema: zodSchema(z.object({})),
+      execute: createSafeToolWrapper("browser.goBack", goBack as any),
+    }),
+
+    "browser.goForward": tool<
+      {},
+      { success: boolean; error?: string }
+    >({
+      description: "Navigate forward in browser history.",
+      inputSchema: zodSchema(z.object({})),
+      execute: createSafeToolWrapper("browser.goForward", goForward as any),
+    }),
+
+    "browser.getAllElements": tool<
+      { selector: string; attribute?: string; getText?: boolean; waitForSelector?: boolean; timeout?: number },
+      { success: boolean; elements?: any[]; error?: string }
+    >({
+      description: "Get information about all elements matching a CSS selector.",
+      inputSchema: zodSchema(
+        z.object({
+          selector: z.string().describe("CSS selector for elements to find"),
+          attribute: z.string().optional().describe("Attribute to extract from each element"),
+          getText: z.boolean().optional().describe("Whether to extract text content from each element"),
+          waitForSelector: z.boolean().optional().describe("Wait for at least one element to appear (default: true)"),
+          timeout: z.number().optional().describe("Wait timeout in milliseconds (default: 10000)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.getAllElements", getAllElements as any),
     }),
   } as const;
 }
