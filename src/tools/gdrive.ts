@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { createServer } from "node:http";
 import { URL } from "node:url";
 
@@ -48,8 +49,18 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email'
 ];
 
-const CREDENTIALS_PATH = path.join(process.cwd(), '.gdrive-credentials.json');
-const TOKEN_PATH = path.join(process.cwd(), '.gdrive-token.json');
+const CONFIG_DIR = path.join(os.homedir(), '.kalpana');
+const CREDENTIALS_PATH = path.join(CONFIG_DIR, 'gdrive-credentials.json');
+const TOKEN_PATH = path.join(CONFIG_DIR, 'gdrive-token.json');
+
+// Ensure config directory exists
+async function ensureConfigDir(): Promise<void> {
+  try {
+    await fs.mkdir(CONFIG_DIR, { recursive: true });
+  } catch (error) {
+    // Directory might already exist, ignore error
+  }
+}
 
 // OAuth client setup
 let oAuth2Client: any = null;
@@ -78,6 +89,7 @@ function getDriveClient() {
 // Check if account is linked and token is valid
 export async function isAccountLinked(): Promise<GDriveAuthStatus> {
   try {
+    await ensureConfigDir();
     const tokenExists = await fs.access(TOKEN_PATH).then(() => true).catch(() => false);
     
     if (!tokenExists) {
@@ -176,6 +188,7 @@ export async function linkAccount(): Promise<{
             auth.setCredentials(tokens);
             
             // Save tokens to file
+            await ensureConfigDir();
             await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2));
             
             res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -258,6 +271,7 @@ export async function unlinkAccount(): Promise<{ success: boolean; message: stri
 
     // Remove the token file
     try {
+      await ensureConfigDir();
       await fs.unlink(TOKEN_PATH);
     } catch (error) {
       // File might not exist, which is fine

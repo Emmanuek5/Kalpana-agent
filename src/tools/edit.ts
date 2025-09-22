@@ -5,9 +5,12 @@ import { generateObject } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { z } from "zod";
 
-const openrouter = process.env.OPENROUTER_API_KEY
-  ? createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
-  : undefined;
+function getOpenRouterClient() {
+  if (!process.env.OPENROUTER_API_KEY) {
+    return undefined;
+  }
+  return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY });
+}
 
 export interface SearchReplaceInput {
   relativePath: string;
@@ -138,6 +141,7 @@ export async function subAgentWrite({
   instruction,
   createIfNotExists = true,
 }: SubAgentWriteInput) {
+  const openrouter = getOpenRouterClient();
   if (!openrouter) {
     throw new Error(
       "OpenRouter API key is required for sub-agent functionality"

@@ -1,6 +1,6 @@
 {
   "name": "kalpana-agent",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Kalpana (कल्पना) - AI development assistant with multi-runtime containerized execution, web automation, and multi-modal analysis",
   "keywords": ["ai", "assistant", "development", "docker", "automation", "web-scraping", "multi-modal", "nodejs", "python", "bun"],
   "author": "Kalpana AI Team",

@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 export interface NotionConfig {
   token?: string;
@@ -34,13 +35,26 @@ export interface NotionUpdatePageInput {
   archived?: boolean;
 }
 
-const CONFIG_FILE = path.join(process.cwd(), ".notion-config.json");
+const CONFIG_DIR = path.join(os.homedir(), '.kalpana');
+const CONFIG_FILE = path.join(CONFIG_DIR, 'notion-config.json');
+
+// Ensure config directory exists
+function ensureConfigDir(): void {
+  try {
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+  } catch (error) {
+    // Directory might already exist, ignore error
+  }
+}
 
 let notionClient: Client | null = null;
 let config: NotionConfig = { isLinked: false };
 
 // Load configuration on module initialization
 try {
+  ensureConfigDir();
   if (fs.existsSync(CONFIG_FILE)) {
     const configData = fs.readFileSync(CONFIG_FILE, "utf8");
     config = JSON.parse(configData);
@@ -54,6 +68,7 @@ try {
 
 function saveConfig() {
   try {
+    ensureConfigDir();
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   } catch (error) {
     console.error("Failed to save Notion configuration:", error);
@@ -97,6 +112,7 @@ export async function unlinkNotionAccount(): Promise<{ success: boolean; message
     notionClient = null;
     
     // Remove config file
+    ensureConfigDir();
     if (fs.existsSync(CONFIG_FILE)) {
       fs.unlinkSync(CONFIG_FILE);
     }

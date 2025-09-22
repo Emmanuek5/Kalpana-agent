@@ -183,6 +183,8 @@ async function resolveProjectMcpPath(explicit?: string): Promise<string> {
     } catch {}
   }
 
+  
+
   // default to first candidate even if missing; caller will handle read error
   return candidates[0] as string;
 }
