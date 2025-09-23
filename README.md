@@ -13,6 +13,8 @@
 - **Advanced Web Automation**: Complete browser automation with local Puppeteer, remote HyperBrowser, and AI-powered HyperAgent
 - **Intelligent Web Scraping**: Extract content from websites with captcha solving and ad blocking
 - **Documentation Access**: Fetch docs using Context7 or direct URL access
+- **Multi-Language Error Checking**: Comprehensive syntax validation for 9+ programming languages
+- **Smart Context Management**: Intelligent conversation memory with automatic summarization
 - **Extensible Tool System**: MCP (Model Context Protocol) support for custom tools
 
 ### Installation
@@ -248,6 +250,9 @@ bun run start --sandbox ../shared-workspace
 **In-Chat Commands:**
 - `/help` - Show help message and available commands
 - `/mcp` - Show MCP server status and loaded tools
+- `/context` - Show context manager status and token usage
+- `/context search <query>` - Search through summarized conversation history
+- `/context stats` - Show detailed context statistics and memory usage
 - `/processes` (or `/ps`) - List all running processes in container
 
 ### Features
@@ -281,6 +286,59 @@ bun run start --sandbox ../shared-workspace
   - **HyperAgent**: AI-powered autonomous web tasks with natural language descriptions
 - **Web Scraping**: Extract structured data (text, links, images, metadata) from websites
 - **Custom Sandbox**: Use `--sandbox` to work in any directory for project-specific workflows
+- **Error Checking**: Validate code syntax and quality across multiple programming languages
+- **Context Management**: Intelligent conversation memory that preserves important information
+
+### Multi-Language Error Checking
+
+**Supported Languages:**
+- **JavaScript/TypeScript**: Syntax validation, ESLint integration, import/export checking
+- **Python**: Indentation validation, Python 2/3 compatibility, import analysis
+- **PHP**: Syntax checking, deprecated function detection, variable validation
+- **Go**: Package validation, unused variable detection, error handling patterns
+- **Rust**: Memory safety checks, unused variable warnings, unwrap() usage analysis
+- **Java**: Naming conventions, syntax validation, best practice enforcement
+- **C/C++**: Memory leak detection, syntax checking, modern C++ recommendations
+
+**Error Checking Features:**
+- **Comprehensive validation**: Syntax errors, type errors, linting issues, best practices
+- **Line-by-line reporting**: Precise error locations with detailed descriptions
+- **Project-wide analysis**: Validate entire codebases including critical configuration files
+- **Integration ready**: Works with TypeScript compiler, ESLint, and other development tools
+- **Smart file detection**: Automatically detects file types and applies appropriate validation rules
+
+**Usage Examples:**
+```bash
+# Check individual files
+"Check this Python script for errors: ./app.py"
+"Validate the syntax of my TypeScript component"
+
+# Project-wide validation
+"Analyze this entire project for code quality issues"
+"Check all the configuration files in this repository"
+```
+
+### Smart Context Management
+
+**Intelligent Memory System:**
+- **Automatic summarization**: Preserves conversation history within 230k token limits
+- **Importance-based retention**: Prioritizes critical discussions (errors, configurations, decisions)
+- **Silent operation**: Works seamlessly in the background without interrupting workflow
+- **Persistent storage**: Context saved to `~/.kalpana/context/` for session continuity
+
+**Context Features:**
+- **Smart truncation**: Only summarizes when approaching token limits (225k/230k)
+- **Key information preservation**: Technical details, code snippets, and important decisions retained
+- **Searchable history**: Find information from previous conversations with `/context search`
+- **Usage monitoring**: Track token consumption and conversation health with `/context stats`
+- **Configurable thresholds**: Optimized for maximum context preservation
+
+**Context Commands:**
+```bash
+/context                    # Show current token usage and status
+/context search "docker"    # Search conversation history
+/context stats             # Detailed memory and token statistics
+```
 
 ### Browser Automation Capabilities
 

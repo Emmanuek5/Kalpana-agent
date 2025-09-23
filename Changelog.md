@@ -2,6 +2,44 @@
 
 All notable changes to AI Container will be documented in this file.
 
+## [1.1.0] - 2025-01-23
+
+### Added
+
+- **Multi-Language Error Checking System**: Comprehensive syntax validation for 9+ programming languages
+  - JavaScript/TypeScript: Syntax validation, ESLint integration, import/export checking
+  - Python: Indentation validation, Python 2/3 compatibility, import analysis
+  - PHP: Syntax checking, deprecated function detection, variable validation
+  - Go: Package validation, unused variable detection, error handling patterns
+  - Rust: Memory safety checks, unused variable warnings, unwrap() usage analysis
+  - Java: Naming conventions, syntax validation, best practice enforcement
+  - C/C++: Memory leak detection, syntax checking, modern C++ recommendations
+- **Smart Context Management System**: Intelligent conversation memory with automatic summarization
+  - Preserves conversation history within 230k token limits
+  - Importance-based retention prioritizing critical discussions
+  - Silent operation working seamlessly in background
+  - Persistent storage in ~/.kalpana/context/ for session continuity
+  - Searchable history with `/context search <query>` command
+  - Token usage monitoring with `/context` and `/context stats` commands
+- **Error Checking Tools**: 
+  - `errorCheck.checkFile` for single file validation with line-by-line error reporting
+  - `errorCheck.validateProject` for comprehensive project health checks
+  - Automatic file type detection with smart content analysis
+  - Integration with TypeScript compiler, ESLint, and other development tools
+- **Enhanced CLI Commands**:
+  - `/context` - Show context manager status and token usage
+  - `/context search <query>` - Search through summarized conversation history
+  - `/context stats` - Show detailed context statistics and memory usage
+- **System Prompt Updates**: Added comprehensive documentation for error checking and context management capabilities
+
+### Changed
+
+- Updated package version to 1.1.0
+- Enhanced package description to include new error checking and context management features
+- Added new keywords: "error-checking", "context-management"
+- Updated README.md with detailed sections on multi-language error checking and smart context management
+- System prompt now includes error checking and context management capabilities
+
 ## [Unreleased]
 
 ### Added

@@ -3,6 +3,7 @@ import path from "node:path";
 import { getActiveSandbox } from "../sandbox";
 import { generateText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { isRelativePathIgnored } from "../utils/gitignore";
 
 export interface WriteFileInput {
   relativePath: string; // relative to /workspace in the container and host volume
@@ -59,16 +60,32 @@ export interface LineCountInput {
   relativePath: string;
 }
 
-function toHostPath(relativePath = "") {
+async function toHostPath(relativePath = "") {
   const { hostVolumePath } = getActiveSandbox();
   const p = path.resolve(hostVolumePath, relativePath);
   if (!p.startsWith(hostVolumePath))
     throw new Error("Path escapes sandbox volume");
+  
+  // Check if the path is ignored by .gitignore
+  const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath);
+  if (isIgnored) {
+    throw new Error(`Access denied: '${relativePath}' is ignored by .gitignore`);
+  }
+  
   return p;
 }
 
+// Helper function to check if a path should be accessible
+async function checkPathAccess(relativePath: string): Promise<void> {
+  const { hostVolumePath } = getActiveSandbox();
+  const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath);
+  if (isIgnored) {
+    throw new Error(`Access denied: '${relativePath}' is ignored by .gitignore`);
+  }
+}
+
 export async function fsWriteFile({ relativePath, content }: WriteFileInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, content, "utf8");
   return { ok: true } as const;
@@ -80,7 +97,7 @@ export async function fsReadFile({
   startLine,
   endLine,
 }: ReadFileInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
   const text = await fs.readFile(target, "utf8");
   const lines = text.split("\n");
   const totalLines = lines.length;
@@ -131,7 +148,8 @@ export async function fsListDir({
   relativePath = ".",
   recursive = false,
 }: ListDirInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
+  const { hostVolumePath } = getActiveSandbox();
 
   // Directories to ignore
   const ignoredDirs = new Set([
@@ -154,13 +172,24 @@ export async function fsListDir({
 
   if (!recursive) {
     const entries = await fs.readdir(target, { withFileTypes: true });
-    return entries
-      .filter((e) => !ignoredDirs.has(e.name))
-      .map((e) => ({
-        name: e.name,
-        type: e.isDirectory() ? "dir" : "file",
-        path: path.posix.join(relativePath, e.name),
-      }));
+    const filteredEntries = [];
+    
+    for (const e of entries) {
+      if (ignoredDirs.has(e.name)) continue;
+      
+      const entryRelativePath = path.posix.join(relativePath, e.name);
+      const isIgnored = await isRelativePathIgnored(entryRelativePath, hostVolumePath, e.isDirectory());
+      
+      if (!isIgnored) {
+        filteredEntries.push({
+          name: e.name,
+          type: e.isDirectory() ? "dir" : "file",
+          path: entryRelativePath,
+        });
+      }
+    }
+    
+    return filteredEntries;
   }
 
   // Recursive listing
@@ -177,6 +206,12 @@ export async function fsListDir({
 
         const fullPath = path.join(dirPath, entry.name);
         const relativePath = path.posix.join(relativeBase, entry.name);
+        
+        // Check if this entry is ignored by .gitignore
+        const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath, entry.isDirectory());
+        if (isIgnored) {
+          continue;
+        }
 
         results.push({
           name: entry.name,
@@ -201,7 +236,7 @@ export async function fsMakeDir({
   relativePath,
   recursive = true,
 }: MakeDirInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
   await fs.mkdir(target, { recursive });
   return { ok: true, path: relativePath };
 }
@@ -210,7 +245,7 @@ export async function fsDelete({
   relativePath,
   recursive = false,
 }: DeleteInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
 
   try {
     const stats = await fs.stat(target);
@@ -229,8 +264,8 @@ export async function fsDelete({
 }
 
 export async function fsCopy({ sourcePath, destinationPath }: CopyInput) {
-  const source = toHostPath(sourcePath);
-  const destination = toHostPath(destinationPath);
+  const source = await toHostPath(sourcePath);
+  const destination = await toHostPath(destinationPath);
 
   try {
     // Create destination directory if it doesn't exist
@@ -257,8 +292,8 @@ export async function fsCopy({ sourcePath, destinationPath }: CopyInput) {
 }
 
 export async function fsMove({ sourcePath, destinationPath }: MoveInput) {
-  const source = toHostPath(sourcePath);
-  const destination = toHostPath(destinationPath);
+  const source = await toHostPath(sourcePath);
+  const destination = await toHostPath(destinationPath);
 
   try {
     // Create destination directory if it doesn't exist
@@ -277,7 +312,7 @@ export async function fsMove({ sourcePath, destinationPath }: MoveInput) {
 }
 
 export async function fsStats({ relativePath }: FileStatsInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
 
   try {
     const stats = await fs.stat(target);
@@ -307,7 +342,7 @@ export async function fsStats({ relativePath }: FileStatsInput) {
 
 // File summarization using AI sub-agent
 export async function summarizeFile({ relativePath }: FileSummaryInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
   const text = await fs.readFile(target, "utf8");
   const lines = text.split("\n");
   const totalLines = lines.length;
@@ -439,7 +474,7 @@ export async function fsReadFileChunk({
   startLine,
   endLine,
 }: ReadFileChunkInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
   const text = await fs.readFile(target, "utf8");
   const lines = text.split("\n");
   const totalLines = lines.length;
@@ -469,7 +504,7 @@ export async function fsReadFileChunk({
 
 // Get line count for a file without reading full content
 export async function fsLineCount({ relativePath }: LineCountInput) {
-  const target = toHostPath(relativePath);
+  const target = await toHostPath(relativePath);
 
   try {
     const text = await fs.readFile(target, "utf8");

@@ -20,6 +20,7 @@ import { buildGDriveTools } from "./tools/gdrive";
 import { buildNotionTools } from "./tools/notion";
 import { createSafeToolWrapper } from "./safeToolWrapper";
 import { buildGeminiTools } from "./tools/gemini";
+import { buildErrorCheckTools } from "./tools/error-check";
 import { mcpManager } from "../mcp";
 import { contextManager } from "../context-manager.js";
 import { calculateRemainingContext } from "../token-counter.js";
@@ -39,10 +40,10 @@ export async function runAgent(
   });
 
   // Apply context management to keep within token limits
-  const managedHistory = await contextManager.manageContext(filteredHistory, system);
+  const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
+  const managedHistory = await contextManager.manageContext(filteredHistory, system, modelId);
   
   // Check remaining context space
-  const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
   const contextInfo = calculateRemainingContext(
     managedHistory, 
     system, 
@@ -81,6 +82,7 @@ export async function runAgent(
     ...buildGDriveTools(),
     ...buildGeminiTools(),
     ...buildNotionTools(),
+    ...buildErrorCheckTools(),
 
     ...wrappedMcpTools,
   } as const;

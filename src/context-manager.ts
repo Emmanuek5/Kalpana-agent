@@ -4,6 +4,7 @@ import { openrouter } from "./agents/system.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { estimateTokens, estimateMessageTokens } from "./token-counter.js";
 
 /**
  * Context Management System for Kalpana
@@ -41,51 +42,6 @@ export interface ContextManagerConfig {
   contextDir: string;
 }
 
-/**
- * Rough token estimation for OpenAI-compatible models
- * More accurate than character count, less accurate than tiktoken
- */
-function estimateTokens(text: string): number {
-  // Rough estimation: ~4 characters per token for English text
-  // Account for special tokens, formatting, etc.
-  const baseTokens = Math.ceil(text.length / 4);
-  
-  // Add extra tokens for JSON structure, tool calls, etc.
-  const jsonMatches = text.match(/[{}[\]",:]/g);
-  const extraTokens = jsonMatches ? Math.ceil(jsonMatches.length / 10) : 0;
-  
-  return baseTokens + extraTokens;
-}
-
-/**
- * Estimate tokens for a ModelMessage
- */
-function estimateMessageTokens(message: ModelMessage): number {
-  let tokens = 0;
-  
-  // Role token
-  tokens += 1;
-  
-  // Content tokens
-  if (typeof message.content === 'string') {
-    tokens += estimateTokens(message.content);
-  } else if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (typeof part === 'string') {
-        tokens += estimateTokens(part);
-      } else if (part && typeof part === 'object') {
-        tokens += estimateTokens(JSON.stringify(part));
-      }
-    }
-  }
-  
-  // Tool calls and results
-  if ('toolInvocations' in message && message.toolInvocations) {
-    tokens += estimateTokens(JSON.stringify(message.toolInvocations));
-  }
-  
-  return tokens;
-}
 
 export class ContextManager {
   private config: ContextManagerConfig;
@@ -95,9 +51,9 @@ export class ContextManager {
   constructor(config?: Partial<ContextManagerConfig>) {
     this.config = {
       maxContextTokens: 230000, // 230k token limit
-      targetContextTokens: 200000, // Start summarizing at 200k
-      recentMessagesCount: 10, // Always keep last 10 messages
-      summaryModel: process.env.SUB_AGENT_MODEL_ID || "openai/gpt",
+      targetContextTokens: 225000, // Start summarizing very close to limit (98%)
+      recentMessagesCount: 0, // Don't preserve any specific number - keep all until limit
+      summaryModel: process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini",
       contextDir: path.join(os.homedir(), '.kalpana', 'context'),
       ...config
     };
@@ -118,22 +74,23 @@ export class ContextManager {
    */
   async analyzeContext(
     messages: ModelMessage[], 
-    systemPrompt: string
+    systemPrompt: string,
+    modelId: string = "openai/gpt-4o-mini"
   ): Promise<ContextWindow> {
-    const systemPromptTokens = estimateTokens(systemPrompt);
+    const systemPromptTokens = estimateTokens(systemPrompt, modelId, true).tokens;
     let totalTokens = systemPromptTokens;
     
     // Calculate tokens for all messages
     const messageTokens = messages.map(msg => ({
       message: msg,
-      tokens: estimateMessageTokens(msg)
+      tokens: estimateMessageTokens(msg, modelId).tokens
     }));
     
     totalTokens += messageTokens.reduce((sum, item) => sum + item.tokens, 0);
     
     // Add tokens from summarized segments
     const summarizedTokens = this.conversationSegments.reduce(
-      (sum, segment) => sum + (segment.summary ? estimateTokens(segment.summary) : 0), 
+      (sum, segment) => sum + (segment.summary ? estimateTokens(segment.summary, modelId).tokens : 0), 
       0
     );
     totalTokens += summarizedTokens;
@@ -152,43 +109,68 @@ export class ContextManager {
    */
   async manageContext(
     messages: ModelMessage[], 
-    systemPrompt: string
+    systemPrompt: string,
+    modelId: string = "openai/gpt-4o-mini"
   ): Promise<ModelMessage[]> {
-    const contextWindow = await this.analyzeContext(messages, systemPrompt);
+    const contextWindow = await this.analyzeContext(messages, systemPrompt, modelId);
     
-    // If we're under the target, no action needed
+    // If we're under the target, no action needed - keep all messages
     if (contextWindow.totalTokens <= this.config.targetContextTokens) {
       return messages;
     }
+
+    // We've hit the limit - need to summarize oldest messages to make room
+    // Calculate how many tokens we need to free up
+    const excessTokens = contextWindow.totalTokens - this.config.targetContextTokens;
+    const safetyMargin = 5000; // Extra buffer for response generation
+    const tokensToFree = excessTokens + safetyMargin;
     
-    // Keep recent messages (never summarize these)
-    const recentMessages = messages.slice(-this.config.recentMessagesCount);
-    const olderMessages = messages.slice(0, -this.config.recentMessagesCount);
+    // Start from the oldest messages and summarize until we free enough tokens
+    let tokensSaved = 0;
+    let messagesToSummarize: ModelMessage[] = [];
+    let remainingMessages = [...messages];
     
-    if (olderMessages.length === 0) {
-      return messages;
+    // Work from oldest to newest, summarizing messages until we have enough space
+    for (let i = 0; i < messages.length && tokensSaved < tokensToFree; i++) {
+      const message = messages[i];
+      if (!message) continue; // Skip undefined messages
+      
+      const messageTokens = estimateMessageTokens(message, modelId).tokens;
+      messagesToSummarize.push(message);
+      tokensSaved += messageTokens;
+      remainingMessages = messages.slice(i + 1);
     }
 
-    // Group older messages into segments for summarization
-    const segmentsToSummarize = this.groupMessagesIntoSegments(olderMessages);
-    
-    // Summarize each segment
-    for (const segment of segmentsToSummarize) {
-      if (!segment.summary) {
-        await this.summarizeSegment(segment);
+    // If we need to summarize everything (edge case), keep at least the last 5 messages
+    if (remainingMessages.length < 5 && messages.length > 5) {
+      const keepCount = Math.min(5, messages.length);
+      remainingMessages = messages.slice(-keepCount);
+      messagesToSummarize = messages.slice(0, -keepCount);
+    }
+
+    // Group messages to summarize into segments
+    if (messagesToSummarize.length > 0) {
+      const segmentsToSummarize = this.groupMessagesIntoSegments(messagesToSummarize);
+      
+      // Summarize each segment
+      for (const segment of segmentsToSummarize) {
+        if (!segment.summary) {
+          await this.summarizeSegment(segment);
+        }
       }
+      
+      // Add to our stored segments
+      this.conversationSegments.push(...segmentsToSummarize);
+      
+      // Create context-aware summary messages
+      const summaryMessages = await this.createSummaryMessages();
+      
+      // Return summary + remaining messages
+      return [...summaryMessages, ...remainingMessages];
     }
     
-    // Add to our stored segments
-    this.conversationSegments.push(...segmentsToSummarize);
-    
-    // Create context-aware summary messages
-    const summaryMessages = await this.createSummaryMessages();
-    
-    // Return summary + recent messages
-    const managedMessages = [...summaryMessages, ...recentMessages];
-    
-    return managedMessages;
+    // If no summarization was needed (shouldn't happen), return original messages
+    return messages;
   }
 
   /**
@@ -201,7 +183,7 @@ export class ContextManager {
     for (let i = 0; i < messages.length; i += segmentSize) {
       const segmentMessages = messages.slice(i, i + segmentSize);
       const tokenCount = segmentMessages.reduce(
-        (sum, msg) => sum + estimateMessageTokens(msg), 
+        (sum, msg) => sum + estimateMessageTokens(msg, "openai/gpt-4o-mini").tokens, 
         0
       );
       
