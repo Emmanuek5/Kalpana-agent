@@ -390,8 +390,30 @@ async function main() {
         console.log(`    Medium: ${stats.importanceBreakdown.medium} segments`);
         console.log(`    Low: ${stats.importanceBreakdown.low} segments`);
         
+      } else if (command === "summarize") {
+        // Force-create summaries from all current messages
+        try {
+          console.log(chalk.gray("Creating conversation summaries..."));
+          await contextManager.forceSummarizeAll(history);
+          const stats = contextManager.getContextStats();
+          console.log(chalk.green(`✅ Created ${stats.segmentCount} summary segment(s).`));
+          console.log(chalk.gray("Use '/context' to view status or '/context search <query>' to search summaries."));
+        } catch (e) {
+          console.error(chalk.red(`Failed to summarize context: ${(e as Error).message}`));
+        }
+        
+      } else if (command === "save") {
+        // Save raw message history to ~/.kalpana/context/
+        try {
+          const savedPath = await contextManager.saveMessages(sessionId, history);
+          console.log(chalk.green("💾 Conversation saved."));
+          console.log(chalk.gray(`Path: ${savedPath}`));
+        } catch (e) {
+          console.error(chalk.red(`Failed to save conversation: ${(e as Error).message}`));
+        }
+        
       } else {
-        console.log(chalk.yellow("Unknown context command. Available: status, search <query>, stats"));
+        console.log(chalk.yellow("Unknown context command. Available: status, search <query>, stats, summarize, save"));
       }
       
       process.stdout.write("\n> ");
@@ -407,6 +429,8 @@ async function main() {
       console.log("  /context     - Show context management status");
       console.log("  /context search <query> - Search summarized context");
       console.log("  /context stats - Show detailed context statistics");
+      console.log("  /context summarize - Create summaries for the current conversation");
+      console.log("  /context save - Save full conversation to ~/.kalpana/context/");
       console.log("  /help        - Show this help message");
       console.log("");
       console.log(chalk.cyan("CLI Options:"));

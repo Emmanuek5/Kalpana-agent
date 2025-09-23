@@ -61,6 +61,47 @@ export class ContextManager {
     this.ensureContextDir();
   }
 
+  /**
+   * Force summarization of the provided messages regardless of token usage.
+   * Clears existing stored segments and rebuilds them from the given messages.
+   * Returns a set of summary messages suitable for injecting into context.
+   */
+  async forceSummarizeAll(
+    messages: ModelMessage[],
+    modelId: string = this.config.summaryModel
+  ): Promise<ModelMessage[]> {
+    // Reset stored segments and counter
+    this.conversationSegments = [];
+    this.segmentCounter = 0;
+
+    // Group and summarize all messages
+    const segments = this.groupMessagesIntoSegments(messages);
+    for (const segment of segments) {
+      await this.summarizeSegment(segment);
+    }
+    this.conversationSegments.push(...segments);
+
+    // Create and return summary messages
+    const summaryMessages = await this.createSummaryMessages();
+    return summaryMessages;
+  }
+
+  /**
+   * Save the entire raw message history for this session to disk
+   */
+  async saveMessages(sessionId: string, messages: ModelMessage[]): Promise<string> {
+    await this.ensureContextDir();
+    const filePath = path.join(this.config.contextDir, `messages_${sessionId}.json`);
+    const payload = {
+      sessionId,
+      timestamp: Date.now(),
+      modelId: this.config.summaryModel,
+      messages,
+    };
+    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    return filePath;
+  }
+
   private async ensureContextDir(): Promise<void> {
     try {
       await fs.mkdir(this.config.contextDir, { recursive: true });

@@ -6,7 +6,6 @@ import {
   zodSchema,
   type ModelMessage,
 } from "ai";
-import chalk from "chalk";
 import { openrouter, buildSystemPrompt } from "./system";
 import { buildSandboxTools } from "./tools/sandbox";
 import { buildDockerTools } from "./tools/docker";
@@ -87,6 +86,8 @@ export async function runAgent(
     ...wrappedMcpTools,
   } as const;
 
+
+
   const allMessages: ModelMessage[] = [
     ...managedHistory,
     { role: "user", content: userInstruction }
@@ -104,9 +105,22 @@ export async function runAgent(
   const responseMessages = (result as any).response?.messages as
     | ModelMessage[]
     | undefined;
-  if (responseMessages && Array.isArray(responseMessages)) {
-    return { text: result.text, messages: responseMessages };
+  if (responseMessages && Array.isArray(responseMessages) && responseMessages.length > 0) {
+    // Filter out 'user' and 'system' messages from provider response to avoid duplicates
+    const providerAssistantMessages = responseMessages.filter(
+      (m) => m && typeof m === 'object' && 'role' in m && (m.role === 'assistant' || m.role === 'tool')
+    );
+    // Append the new user message and provider assistant/tool messages to existing history
+    return {
+      text: result.text,
+      messages: [
+        ...history,
+        { role: "user", content: userInstruction },
+        ...providerAssistantMessages,
+      ] as ModelMessage[],
+    };
   }
+  // Fallback: append a simple assistant response
   return {
     text: result.text,
     messages: [
