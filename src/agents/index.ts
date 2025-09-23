@@ -20,6 +20,7 @@ import { buildNotionTools } from "./tools/notion";
 import { createSafeToolWrapper } from "./safeToolWrapper";
 import { buildGeminiTools } from "./tools/gemini";
 import { buildErrorCheckTools } from "./tools/error-check";
+import { buildLocalScraperTools } from "./tools/local-scraper";
 import { mcpManager } from "../mcp";
 import { contextManager } from "../context-manager.js";
 import { calculateRemainingContext } from "../token-counter.js";
@@ -34,22 +35,31 @@ export async function runAgent(
 
   // Filter and ensure messages are properly formatted as ModelMessage[]
   const filteredHistory = history.filter((msg): msg is ModelMessage => {
-    return msg && typeof msg === 'object' && 'role' in msg && 'content' in msg &&
-           (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system' );
+    return (
+      msg &&
+      typeof msg === "object" &&
+      "role" in msg &&
+      "content" in msg &&
+      (msg.role === "user" || msg.role === "assistant" || msg.role === "system")
+    );
   });
 
   // Apply context management to keep within token limits
   const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
-  const managedHistory = await contextManager.manageContext(filteredHistory, system, modelId);
-  
+  const managedHistory = await contextManager.manageContext(
+    filteredHistory,
+    system,
+    modelId
+  );
+
   // Check remaining context space
   const contextInfo = calculateRemainingContext(
-    managedHistory, 
-    system, 
+    managedHistory,
+    system,
     230000, // 230k token limit
     modelId
   );
-  
+
   // Context management happens silently in the background
 
   // Load MCP tools (already loaded at CLI startup, but read current set)
@@ -82,15 +92,14 @@ export async function runAgent(
     ...buildGeminiTools(),
     ...buildNotionTools(),
     ...buildErrorCheckTools(),
+    ...buildLocalScraperTools(),
 
     ...wrappedMcpTools,
   } as const;
 
-
-
   const allMessages: ModelMessage[] = [
     ...managedHistory,
-    { role: "user", content: userInstruction }
+    { role: "user", content: userInstruction },
   ];
 
   const result = await generateText({
@@ -105,10 +114,18 @@ export async function runAgent(
   const responseMessages = (result as any).response?.messages as
     | ModelMessage[]
     | undefined;
-  if (responseMessages && Array.isArray(responseMessages) && responseMessages.length > 0) {
+  if (
+    responseMessages &&
+    Array.isArray(responseMessages) &&
+    responseMessages.length > 0
+  ) {
     // Filter out 'user' and 'system' messages from provider response to avoid duplicates
     const providerAssistantMessages = responseMessages.filter(
-      (m) => m && typeof m === 'object' && 'role' in m && (m.role === 'assistant' || m.role === 'tool')
+      (m) =>
+        m &&
+        typeof m === "object" &&
+        "role" in m &&
+        (m.role === "assistant" || m.role === "tool")
     );
     // Append the new user message and provider assistant/tool messages to existing history
     return {

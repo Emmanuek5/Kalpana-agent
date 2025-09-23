@@ -130,25 +130,9 @@ export function getToolStartMessage(
     case "docker.getContainers":
       const filterText = arg.all ? " (including stopped)" : " (running only)";
       return `📋 Listing Docker containers${filterText}`;
-    // Browser Tools
-    case "browser.goToPage":
-      return `🌐 Navigating to ${chalk.cyan(arg.url)}`;
-    case "browser.click":
-      return `🖱️ Clicking element ${chalk.cyan(arg.selector)}`;
-    case "browser.type":
-      return `⌨️ Typing into ${chalk.cyan(arg.selector)}`;
-    case "browser.screenshot":
-      return `📸 Taking screenshot${arg.path ? ` to ${chalk.cyan(arg.path)}` : ''}`;
-    case "browser.navigateAndTakeScreenshot":
-      return `🌐 Navigating to ${chalk.cyan(arg.url)} and capturing screenshot${arg.path ? ` at ${chalk.cyan(arg.path)}` : ''}`;
-    case "browser.waitForElement":
-      return `⏳ Waiting for element ${chalk.cyan(arg.selector)}`;
-    case "browser.getPageInfo":
-      return `📄 Getting page information`;
-    case "browser.evaluateScript":
-      return `🔧 Executing JavaScript in page`;
-    case "browser.close":
-      return `🚪 Closing browser`;
+    // Puppeteer Browser
+    case "browser.runPuppeteerScript":
+      return `🌐 Running Puppeteer script in sandbox`;
     // Notion
     case "notion.isLinked":
       return `🔗 Checking Notion account status`;
@@ -159,7 +143,9 @@ export function getToolStartMessage(
     case "notion.createPage":
       return `📄 Creating Notion page: ${chalk.cyan(arg.title || "page")}`;
     case "notion.createDatabase":
-      return `🗃️ Creating Notion database: ${chalk.cyan(arg.title || "database")}`;
+      return `🗃️ Creating Notion database: ${chalk.cyan(
+        arg.title || "database"
+      )}`;
     case "notion.queryDatabase":
       return `🔍 Querying Notion database`;
     case "notion.updatePage":
@@ -196,8 +182,6 @@ export function getToolStartMessage(
       return `🌍 Using Hyperbrowser to navigate to ${chalk.cyan(
         arg.url || "page"
       )}`;
-    case "hbrowser.navigateAndTakeScreenshot":
-      return `🌍 Hyperbrowser navigate to ${chalk.cyan(arg.url)} and capture screenshot${arg.path ? ` at ${chalk.cyan(arg.path)}` : ''}`;
     // Google Drive tools
     case "pDrive.isAccountLinked":
       return `🔗 Checking Google Drive account status`;
@@ -223,17 +207,42 @@ export function getToolStartMessage(
       )}"`;
     // Gemini AI analysis tools
     case "gemini.analyzeImage":
-      return `🖼️ Analyzing image ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+      return `🖼️ Analyzing image ${chalk.cyan(
+        arg.relativePath || "file"
+      )} with Gemini AI`;
     case "gemini.analyzePdf":
-      return `📄 Analyzing PDF ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+      return `📄 Analyzing PDF ${chalk.cyan(
+        arg.relativePath || "file"
+      )} with Gemini AI`;
     case "gemini.analyzeVideo":
-      return `🎥 Analyzing video ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+      return `🎥 Analyzing video ${chalk.cyan(
+        arg.relativePath || "file"
+      )} with Gemini AI`;
     case "gemini.analyzeAudio":
-      return `🎵 Analyzing audio ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+      return `🎵 Analyzing audio ${chalk.cyan(
+        arg.relativePath || "file"
+      )} with Gemini AI`;
     case "gemini.analyzeFile":
-      return `🔍 Auto-analyzing file ${chalk.cyan(arg.relativePath || "file")} with Gemini AI`;
+      return `🔍 Auto-analyzing file ${chalk.cyan(
+        arg.relativePath || "file"
+      )} with Gemini AI`;
     case "gemini.getSupportedTypes":
       return `📋 Getting supported file types for Gemini analysis`;
+    // Local Scraper tools
+    case "localScraper.scrape":
+      return `🔍 Local scraping ${chalk.cyan(
+        arg.url || "URL"
+      )} with AI analysis`;
+    case "localScraper.quickText":
+      return `📖 Quick text extraction from ${chalk.cyan(arg.url || "URL")}`;
+    case "localScraper.summarize":
+      return `📝 AI summarizing content from ${chalk.cyan(arg.url || "URL")}`;
+    case "localScraper.extractData":
+      return `🎯 Extracting structured data from ${chalk.cyan(
+        arg.url || "URL"
+      )}`;
+    case "localScraper.cleanup":
+      return `🧹 Cleaning up local scraper resources`;
     default:
       if (toolName.startsWith("mcp.")) {
         const parts = toolName.split(".");
@@ -516,9 +525,11 @@ export function getToolCompletionMessage(
     case "docker.getContainers":
       if (result?.success && result?.containers) {
         const count = result.containers.length;
-        const runningCount = result.containers.filter((c: any) => c.state === 'running').length;
+        const runningCount = result.containers.filter(
+          (c: any) => c.state === "running"
+        ).length;
         const stoppedCount = count - runningCount;
-        const summary = arg.all 
+        const summary = arg.all
           ? `${runningCount} running, ${stoppedCount} stopped`
           : `${runningCount} running`;
         return `✅ Found ${count} container(s) - ${chalk.gray(summary)}`;
@@ -650,62 +661,6 @@ export function getToolCompletionMessage(
         )}`;
       }
       return `❌ Hyperbrowser navigation failed`;
-    case "hbrowser.navigateAndTakeScreenshot":
-      if (result?.success) {
-        const title = result?.title ? ` - "${result.title.substring(0, 30)}..."` : '';
-        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
-        return `✅ Hyperbrowser navigated and captured screenshot${title} (${location})`;
-      }
-      return `❌ Hyperbrowser navigate-and-screenshot failed`;
-    // Browser completions
-    case "browser.goToPage":
-      if (result?.success && result?.title) {
-        return `✅ Navigated to page - ${chalk.gray(`"${result.title}"`)}`;
-      }
-      return `❌ Failed to navigate to page`;
-    case "browser.click":
-      if (result?.success) {
-        return `✅ Clicked element ${chalk.cyan(arg.selector)}`;
-      }
-      return `❌ Failed to click element`;
-    case "browser.type":
-      if (result?.success) {
-        return `✅ Typed text into ${chalk.cyan(arg.selector)}`;
-      }
-      return `❌ Failed to type text`;
-    case "browser.screenshot":
-      if (result?.success) {
-        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
-        return `✅ Screenshot ${location}`;
-      }
-      return `❌ Failed to take screenshot`;
-    case "browser.navigateAndTakeScreenshot":
-      if (result?.success) {
-        const title = result?.title ? ` - "${result.title.substring(0, 30)}..."` : '';
-        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
-        return `✅ Navigated and captured screenshot${title} (${location})`;
-      }
-      return `❌ Failed to navigate and take screenshot`;
-    case "browser.waitForElement":
-      if (result?.success) {
-        return `✅ Element ${chalk.cyan(arg.selector)} appeared`;
-      }
-      return `❌ Element did not appear`;
-    case "browser.getPageInfo":
-      if (result?.success && result?.title) {
-        return `✅ Page info: ${chalk.gray(`"${result.title}" - ${result.url}`)}`;
-      }
-      return `❌ Failed to get page info`;
-    case "browser.evaluateScript":
-      if (result?.success) {
-        return `✅ JavaScript executed successfully`;
-      }
-      return `❌ JavaScript execution failed`;
-    case "browser.close":
-      if (result?.success) {
-        return `✅ Browser closed`;
-      }
-      return `❌ Failed to close browser`;
     // Google Drive completions
     case "pDrive.isAccountLinked":
       if (result?.isLinked || result?.linked) {
@@ -854,6 +809,66 @@ export function getToolCompletionMessage(
         return `❌ Notion not linked - use notion.linkAccount first`;
       }
       return `❌ Failed to add blocks to Notion page`;
+    // Local Scraper completions
+    case "localScraper.scrape":
+      if (
+        result &&
+        typeof result === "string" &&
+        result.includes("✅ Successfully scraped")
+      ) {
+        // Parse URL from result if available
+        const urlMatch = result.match(/Successfully scraped: ([^\n]+)/);
+        const url = urlMatch ? urlMatch[1] : arg.url;
+        return `✅ Local scraper completed - ${chalk.cyan(url)}`;
+      }
+      return `❌ Local scraping failed for ${chalk.cyan(arg.url || "URL")}`;
+    case "localScraper.quickText":
+      if (
+        result &&
+        typeof result === "string" &&
+        result.includes("✅ Text extracted")
+      ) {
+        const chars =
+          result.length > 100
+            ? `${result.length} characters`
+            : "content extracted";
+        return `✅ Quick text extraction completed - ${chalk.gray(chars)}`;
+      }
+      return `❌ Quick text extraction failed for ${chalk.cyan(
+        arg.url || "URL"
+      )}`;
+    case "localScraper.summarize":
+      if (
+        result &&
+        typeof result === "string" &&
+        result.includes("✅ AI Summary")
+      ) {
+        return `✅ AI summarization completed for ${chalk.cyan(
+          arg.url || "URL"
+        )}`;
+      }
+      return `❌ AI summarization failed for ${chalk.cyan(arg.url || "URL")}`;
+    case "localScraper.extractData":
+      if (
+        result &&
+        typeof result === "string" &&
+        result.includes("✅ Structured data extracted")
+      ) {
+        const prompt = arg.dataPrompt
+          ? ` - ${arg.dataPrompt.substring(0, 30)}...`
+          : "";
+        return `✅ Data extraction completed${prompt}`;
+      }
+      return `❌ Data extraction failed for ${chalk.cyan(arg.url || "URL")}`;
+    case "localScraper.cleanup":
+      if (
+        result &&
+        typeof result === "string" &&
+        result.includes("✅ Local scraper resources cleaned")
+      ) {
+        return `✅ Local scraper resources cleaned up successfully`;
+      }
+      return `⚠️ Local scraper cleanup completed with warnings`;
     default:
       if (toolName.startsWith("mcp.")) {
         const parts = toolName.split(".");
@@ -873,7 +888,6 @@ export function getToolCompletionMessage(
 }
 
 // Enhanced wrapper to safely execute tool functions with comprehensive feedback
-// Enhanced wrapper to safely execute tool functions with comprehensive feedback
 export function createSafeToolWrapper<T extends (...args: any[]) => any>(
   toolName: string,
   toolFn: T
@@ -885,13 +899,6 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
 
     toolCollector.startExecution(executionId, toolName, args[0] || args);
 
-    // Show the start message
-    const startMessage = getToolStartMessage(toolName, args[0] || args);
-    if (startMessage) {
-      // Use process.stdout.write to allow for updating the same line
-      process.stdout.write(startMessage);
-    }
-
     try {
       const result = toolFn(...args);
 
@@ -899,36 +906,22 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
         return (result as Promise<any>)
           .then((res: any) => {
             toolCollector.completeExecution(executionId, res);
-            
-            // Update the start message with completion status
+            // Show only the completion message to save space
             const completionMessage = getToolCompletionMessage(
               toolName,
               args[0] || args,
               res
             );
-            if (completionMessage && startMessage) {
-              // Clear the current line and write the completion message
-              process.stdout.write('\r\x1b[K' + completionMessage + '\n');
-            } else if (completionMessage) {
-              console.log(completionMessage);
-            } else if (startMessage) {
-              // If no completion message, just add a newline to the start message
-              process.stdout.write('\n');
+            if (completionMessage) {
+              console.log(chalk.green(completionMessage));
             }
-            
             return res;
           })
           .catch((error: Error) => {
             toolCollector.failExecution(executionId, error);
-            
-            const errorMessage = `❌ ${toolName} failed: ${error.message}`;
-            if (startMessage) {
-              // Clear the current line and write the error message
-              process.stdout.write('\r\x1b[K' + chalk.red(errorMessage) + '\n');
-            } else {
-              console.error(chalk.red(errorMessage));
-            }
-            
+            console.error(
+              chalk.red(`Tool error [${toolName}]: ${error.message}`)
+            );
             return {
               success: false,
               error: error.message,
@@ -938,36 +931,22 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
           });
       }
 
-      // For synchronous operations
+      // For synchronous operations, just show the final message
       toolCollector.completeExecution(executionId, result);
-      
       const completionMessage = getToolCompletionMessage(
         toolName,
         args[0] || args,
         result
       );
-      if (completionMessage && startMessage) {
-        // Clear the current line and write the completion message
-        process.stdout.write('\r\x1b[K' + completionMessage + '\n');
-      } else if (completionMessage) {
-        console.log(completionMessage);
-      } else if (startMessage) {
-        // If no completion message, just add a newline to the start message
-        process.stdout.write('\n');
+      if (completionMessage) {
+        console.log(chalk.green(completionMessage));
       }
-      
       return result;
     } catch (error) {
       toolCollector.failExecution(executionId, error as Error);
-      
-      const errorMessage = `❌ ${toolName} failed: ${(error as Error).message}`;
-      if (startMessage) {
-        // Clear the current line and write the error message
-        process.stdout.write('\r\x1b[K' + chalk.red(errorMessage) + '\n');
-      } else {
-        console.error(chalk.red(errorMessage));
-      }
-      
+      console.error(
+        chalk.red(`Tool error [${toolName}]: ${(error as Error).message}`)
+      );
       return {
         success: false,
         error: (error as Error).message,
