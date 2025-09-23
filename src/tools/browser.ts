@@ -2,6 +2,9 @@
 // Provides specific, well-defined browser actions instead of arbitrary script execution
 
 import type { Browser, Page } from 'puppeteer';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { getActiveSandbox } from '../sandbox';
 
 // Global browser instance management
 let globalBrowser: Browser | null = null;
@@ -46,6 +49,82 @@ export async function closeBrowser(): Promise<{ success: boolean; error?: string
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
+  }
+}
+
+export async function navigateAndTakeScreenshot(options: {
+  url: string;
+  path?: string;
+  fullPage?: boolean;
+  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
+  timeout?: number;
+  scrollWaitMs?: number;
+}): Promise<{ success: boolean; title?: string; url?: string; screenshot?: string; path?: string; error?: string }> {
+  try {
+    const { page } = await getBrowserInstance();
+
+    // Navigate and wait until page is loaded
+    await page.goto(options.url, {
+      waitUntil: options.waitUntil || 'networkidle2',
+      timeout: options.timeout || 30000,
+    });
+
+    // Scroll to bottom to trigger lazy-load/animations and dynamic content
+    const pause = options.scrollWaitMs ?? 800;
+    try {
+      let previousHeight = await page.evaluate(() => document.body.scrollHeight);
+      // Perform incremental bottom scroll until no new content is added
+      // Limit iterations to prevent infinite loops
+      for (let i = 0; i < 25; i++) {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'auto' }));
+        await new Promise(resolve => setTimeout(resolve, pause));
+        const newHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (newHeight === previousHeight) break;
+        previousHeight = newHeight;
+      }
+    } catch {
+      // Ignore scroll errors and proceed to screenshot
+    }
+
+    // Prepare screenshot options with sandbox mapping
+    const screenshotOptions: any = {
+      fullPage: options?.fullPage ?? true,
+      encoding: 'base64',
+    };
+
+    if (options?.path) {
+      const { hostVolumePath, containerVolumePath } = getActiveSandbox();
+      const raw = options.path.replace(/\\/g, '/');
+      let rel: string;
+      if (raw === containerVolumePath || raw.startsWith(containerVolumePath + '/')) {
+        rel = raw.slice(containerVolumePath.length).replace(/^\/+/, '');
+      } else if (path.isAbsolute(options.path)) {
+        rel = path.basename(options.path);
+      } else {
+        rel = options.path;
+      }
+      const hostPath = path.resolve(hostVolumePath, rel);
+      await fs.mkdir(path.dirname(hostPath), { recursive: true });
+      screenshotOptions.path = hostPath;
+      screenshotOptions.encoding = undefined;
+    }
+
+    const title = await page.title();
+    const currentUrl = page.url();
+    const screenshot = await page.screenshot(screenshotOptions);
+
+    return {
+      success: true,
+      title,
+      url: currentUrl,
+      screenshot: options?.path ? undefined : (screenshot as string),
+      path: options?.path,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: `Failed to navigate and take screenshot: ${error.message}`,
+    };
   }
 }
 
@@ -151,7 +230,21 @@ export async function takeScreenshot(options?: {
     };
     
     if (options?.path) {
-      screenshotOptions.path = options.path;
+      // Map container or relative paths to host volume within sandbox
+      const { hostVolumePath, containerVolumePath } = getActiveSandbox();
+      const raw = options.path.replace(/\\/g, '/');
+      let rel: string;
+      if (raw === containerVolumePath || raw.startsWith(containerVolumePath + '/')) {
+        rel = raw.slice(containerVolumePath.length).replace(/^\/+/, '');
+      } else if (path.isAbsolute(options.path)) {
+        // Keep absolute non-container paths as is (best-effort), but prefer sandbox root
+        rel = path.basename(options.path);
+      } else {
+        rel = options.path;
+      }
+      const hostPath = path.resolve(hostVolumePath, rel);
+      await fs.mkdir(path.dirname(hostPath), { recursive: true });
+      screenshotOptions.path = hostPath;
       screenshotOptions.encoding = undefined;
     }
     

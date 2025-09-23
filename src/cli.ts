@@ -13,42 +13,49 @@ import { formatResponse } from "./markdown.js";
 import fs from "node:fs/promises";
 import { loadEnvironment, validateConfig, configExists } from "./config.js";
 import { contextManager } from "./context-manager.js";
-import { calculateRemainingContext, wouldExceedContext } from "./token-counter.js";
+import {
+  calculateRemainingContext,
+  wouldExceedContext,
+} from "./token-counter.js";
 
 // Global error handlers to prevent application crashes
-process.on('uncaughtException', (error) => {
-  console.error(chalk.red('🚨 Uncaught Exception:'), error.message);
-  console.error(chalk.gray('Stack:'), error.stack);
-  console.log(chalk.yellow('⚠️  Application continuing despite error...'));
+process.on("uncaughtException", (error) => {
+  console.error(chalk.red("🚨 Uncaught Exception:"), error.message);
+  console.error(chalk.gray("Stack:"), error.stack);
+  console.log(chalk.yellow("⚠️  Application continuing despite error..."));
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error(chalk.red('🚨 Unhandled Promise Rejection:'), reason);
-  console.error(chalk.gray('Promise:'), promise);
-  console.log(chalk.yellow('⚠️  Application continuing despite error...'));
+process.on("unhandledRejection", (reason, promise) => {
+  console.error(chalk.red("🚨 Unhandled Promise Rejection:"), reason);
+  console.error(chalk.gray("Promise:"), promise);
+  console.log(chalk.yellow("⚠️  Application continuing despite error..."));
 });
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log(chalk.yellow('\n🛑 Received SIGINT, shutting down gracefully...'));
+process.on("SIGINT", async () => {
+  console.log(
+    chalk.yellow("\n🛑 Received SIGINT, shutting down gracefully...")
+  );
   await gracefulShutdown();
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log(chalk.yellow('\n🛑 Received SIGTERM, shutting down gracefully...'));
+process.on("SIGTERM", async () => {
+  console.log(
+    chalk.yellow("\n🛑 Received SIGTERM, shutting down gracefully...")
+  );
   await gracefulShutdown();
   process.exit(0);
 });
 
 async function gracefulShutdown() {
   try {
-    console.log(chalk.blue('🧹 Cleaning up resources...'));
+    console.log(chalk.blue("🧹 Cleaning up resources..."));
     await cleanupAgent();
     await shutdownSandbox();
-    console.log(chalk.green('✅ Cleanup completed'));
+    console.log(chalk.green("✅ Cleanup completed"));
   } catch (error) {
-    console.error(chalk.red('❌ Error during cleanup:'), error);
+    console.error(chalk.red("❌ Error during cleanup:"), error);
   }
 }
 
@@ -61,15 +68,17 @@ function parseSandboxPath(): string {
   const sandboxIndex = process.argv.indexOf("--sandbox");
   if (sandboxIndex !== -1 && sandboxIndex + 1 < process.argv.length) {
     const sandboxPath = process.argv[sandboxIndex + 1];
-    
+
     // Ensure sandboxPath is defined and not empty
     if (!sandboxPath || sandboxPath.trim() === "") {
-      console.error(chalk.red("❌ --sandbox flag requires a valid path argument"));
+      console.error(
+        chalk.red("❌ --sandbox flag requires a valid path argument")
+      );
       process.exit(1);
     }
-    
+
     const trimmedPath = sandboxPath.trim();
-    
+
     // Handle relative paths
     if (trimmedPath === ".") {
       return process.cwd();
@@ -84,33 +93,126 @@ function parseSandboxPath(): string {
       return require("path").resolve(process.cwd(), trimmedPath);
     }
   }
-  
+
   // Fallback to environment variable or default
   return process.env.SANDBOX_VOLUME_PATH || "./.sandbox";
+}
+
+/**
+ * Check context window usage and automatically manage if needed
+ */
+async function checkAndManageContext(
+  history: ModelMessage[],
+  sessionId: string
+): Promise<void> {
+  try {
+    const { buildSystemPrompt } = await import("./agents/system");
+    const systemPrompt = await buildSystemPrompt();
+    const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
+
+    const contextInfo = calculateRemainingContext(
+      history,
+      systemPrompt,
+      230000,
+      modelId
+    );
+
+    // Check if we're approaching or exceeding the limit
+    const warningThreshold = 0.85; // 85% of limit
+    const emergencyThreshold = 0.95; // 95% of limit
+
+    if (contextInfo.percentage >= emergencyThreshold * 100) {
+      // Emergency: Force summarization immediately
+      console.log(
+        chalk.red(
+          `🚨 Emergency context management triggered (${contextInfo.percentage.toFixed(
+            1
+          )}% of limit)`
+        )
+      );
+      console.log(
+        chalk.gray("Automatically summarizing conversation to free up space...")
+      );
+
+      await contextManager.forceSummarizeAll(history, modelId);
+      const managedHistory = await contextManager.manageContext(
+        history,
+        systemPrompt,
+        modelId
+      );
+      history.splice(0, history.length, ...managedHistory);
+
+      const newContextInfo = calculateRemainingContext(
+        history,
+        systemPrompt,
+        230000,
+        modelId
+      );
+
+      console.log(
+        chalk.green(
+          `✅ Context optimized: ${newContextInfo.used.toLocaleString()} tokens (${newContextInfo.percentage.toFixed(
+            1
+          )}%)`
+        )
+      );
+    } else if (contextInfo.percentage >= warningThreshold * 100) {
+      // Warning: Let user know we're approaching the limit
+      console.log(
+        chalk.yellow(
+          `⚠️  Context usage: ${contextInfo.used.toLocaleString()}/${230000} tokens (${contextInfo.percentage.toFixed(
+            1
+          )}%)`
+        )
+      );
+      console.log(
+        chalk.gray(
+          "Approaching token limit. Consider running '/context summarize' to optimize."
+        )
+      );
+    }
+
+    // Save context state
+    await contextManager.saveContext(sessionId);
+  } catch (error) {
+    console.error(
+      chalk.yellow(`⚠️ Context check failed: ${(error as Error).message}`)
+    );
+  }
 }
 
 async function main() {
   // Load global configuration
   await loadEnvironment();
-  
+
   // Check if configuration exists and is valid
   const hasConfig = await configExists();
   if (!hasConfig) {
-    console.log(chalk.yellow('⚠️  No configuration found.'));
-    console.log('Run ' + chalk.cyan('kalpana-config setup') + ' to configure Kalpana with your API keys.');
-    console.log('Or run ' + chalk.cyan('kalpana-config --help') + ' for more options.');
+    console.log(chalk.yellow("⚠️  No configuration found."));
+    console.log(
+      "Run " +
+        chalk.cyan("kalpana-config setup") +
+        " to configure Kalpana with your API keys."
+    );
+    console.log(
+      "Or run " + chalk.cyan("kalpana-config --help") + " for more options."
+    );
     process.exit(1);
   }
-  
+
   const validation = await validateConfig();
   if (!validation.valid) {
-    console.log(chalk.red('❌ Configuration is incomplete.'));
-    console.log(chalk.yellow('Missing required settings:'));
-    validation.missing.forEach(key => {
+    console.log(chalk.red("❌ Configuration is incomplete."));
+    console.log(chalk.yellow("Missing required settings:"));
+    validation.missing.forEach((key) => {
       console.log(`  - ${key}`);
     });
-    console.log('');
-    console.log('Run ' + chalk.cyan('kalpana-config setup') + ' to complete configuration.');
+    console.log("");
+    console.log(
+      "Run " +
+        chalk.cyan("kalpana-config setup") +
+        " to complete configuration."
+    );
     process.exit(1);
   }
 
@@ -120,7 +222,10 @@ async function main() {
   let sessionId = `session_${Date.now()}`;
 
   // Check for --save-history or --history flag
-  if (process.argv.includes("--save-history") || process.argv.includes("--history")) {
+  if (
+    process.argv.includes("--save-history") ||
+    process.argv.includes("--history")
+  ) {
     saveHistory = true;
     console.log(chalk.blue("📝 History saving enabled"));
   }
@@ -163,7 +268,7 @@ async function main() {
       `Multi-runtime container ready → all runtimes available (node, bun, python) → volume=${hostVolumePath}`
     )
   );
-  
+
   // Show sandbox path info
   const isCustomPath = process.argv.includes("--sandbox");
   // No automatic MCP status output; use '/mcp' command to view
@@ -202,7 +307,10 @@ async function main() {
       const result = await stopAllManagedContainers({ remove: true });
       if (saveHistory && history.length > 0) {
         await persistHistory().catch((historyError) => {
-          console.warn(chalk.yellow('⚠️ Failed to save history during cleanup:'), historyError.message);
+          console.warn(
+            chalk.yellow("⚠️ Failed to save history during cleanup:"),
+            historyError.message
+          );
         });
       }
 
@@ -327,14 +435,21 @@ async function main() {
         );
 
         console.log(chalk.cyan("Context Management Status:"));
-        console.log(`  📊 Current usage: ${contextInfo.used.toLocaleString()}/${230000} tokens (${contextInfo.percentage.toFixed(1)}%)`);
+        console.log(
+          `  📊 Current usage: ${contextInfo.used.toLocaleString()}/${230000} tokens (${contextInfo.percentage.toFixed(
+            1
+          )}%)`
+        );
         console.log(`  💾 Summarized segments: ${stats.segmentCount}`);
-        console.log(`  📝 Total summarized messages: ${stats.totalSummarizedMessages}`);
+        console.log(
+          `  📝 Total summarized messages: ${stats.totalSummarizedMessages}`
+        );
         console.log(`  🔥 High importance: ${stats.importanceBreakdown.high}`);
-        console.log(`  📋 Medium importance: ${stats.importanceBreakdown.medium}`);
+        console.log(
+          `  📋 Medium importance: ${stats.importanceBreakdown.medium}`
+        );
         console.log(`  📄 Low importance: ${stats.importanceBreakdown.low}`);
         console.log(`  🕒 Current messages: ${history.length}`);
-        
       } else if (command === "search") {
         // Search context
         const query = parts.slice(2).join(" ");
@@ -347,21 +462,26 @@ async function main() {
             console.log(chalk.gray("  No matching segments found."));
           } else {
             for (const segment of results.slice(0, 5)) {
-              console.log(chalk.blue(`\n  Segment ${segment.id} (${segment.importance} importance):`));
+              console.log(
+                chalk.blue(
+                  `\n  Segment ${segment.id} (${segment.importance} importance):`
+                )
+              );
               console.log(`    ${segment.summary}`);
               if (segment.keyPoints && segment.keyPoints.length > 0) {
                 console.log(chalk.gray("    Key points:"));
-                segment.keyPoints.slice(0, 3).forEach(point => {
+                segment.keyPoints.slice(0, 3).forEach((point) => {
                   console.log(chalk.gray(`      • ${point}`));
                 });
               }
             }
             if (results.length > 5) {
-              console.log(chalk.gray(`\n  ... and ${results.length - 5} more results`));
+              console.log(
+                chalk.gray(`\n  ... and ${results.length - 5} more results`)
+              );
             }
           }
         }
-        
       } else if (command === "stats") {
         // Detailed statistics
         const stats = contextManager.getContextStats();
@@ -377,45 +497,94 @@ async function main() {
         console.log(chalk.cyan("Detailed Context Statistics:"));
         console.log(`  📊 Token Usage:`);
         console.log(`    Current: ${contextInfo.used.toLocaleString()} tokens`);
-        console.log(`    System prompt: ${contextInfo.systemTokens.toLocaleString()} tokens`);
-        console.log(`    Messages: ${contextInfo.messageTokens.toLocaleString()} tokens`);
-        console.log(`    Remaining: ${contextInfo.remaining.toLocaleString()} tokens`);
+        console.log(
+          `    System prompt: ${contextInfo.systemTokens.toLocaleString()} tokens`
+        );
+        console.log(
+          `    Messages: ${contextInfo.messageTokens.toLocaleString()} tokens`
+        );
+        console.log(
+          `    Remaining: ${contextInfo.remaining.toLocaleString()} tokens`
+        );
         console.log(`    Usage: ${contextInfo.percentage.toFixed(2)}%`);
         console.log(`  📝 Conversation:`);
         console.log(`    Current messages: ${history.length}`);
         console.log(`    Summarized segments: ${stats.segmentCount}`);
-        console.log(`    Total summarized messages: ${stats.totalSummarizedMessages}`);
+        console.log(
+          `    Total summarized messages: ${stats.totalSummarizedMessages}`
+        );
         console.log(`  🎯 Importance Breakdown:`);
         console.log(`    High: ${stats.importanceBreakdown.high} segments`);
         console.log(`    Medium: ${stats.importanceBreakdown.medium} segments`);
         console.log(`    Low: ${stats.importanceBreakdown.low} segments`);
-        
       } else if (command === "summarize") {
         // Force-create summaries from all current messages
         try {
           console.log(chalk.gray("Creating conversation summaries..."));
-          await contextManager.forceSummarizeAll(history);
+          const { buildSystemPrompt } = await import("./agents/system");
+          const systemPrompt = await buildSystemPrompt();
+          const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
+
+          await contextManager.forceSummarizeAll(history, modelId);
           const stats = contextManager.getContextStats();
-          console.log(chalk.green(`✅ Created ${stats.segmentCount} summary segment(s).`));
-          console.log(chalk.gray("Use '/context' to view status or '/context search <query>' to search summaries."));
+          console.log(
+            chalk.green(`✅ Created ${stats.segmentCount} summary segment(s).`)
+          );
+
+          // Apply the managed context to reduce current message count
+          const managedHistory = await contextManager.manageContext(
+            history,
+            systemPrompt,
+            modelId
+          );
+          history.splice(0, history.length, ...managedHistory);
+
+          const contextInfo = calculateRemainingContext(
+            history,
+            systemPrompt,
+            230000,
+            modelId
+          );
+
+          console.log(
+            chalk.green(
+              `🎯 Context optimized: ${contextInfo.used.toLocaleString()} tokens (${contextInfo.percentage.toFixed(
+                1
+              )}%)`
+            )
+          );
+          console.log(
+            chalk.gray(
+              "Use '/context' to view status or '/context search <query>' to search summaries."
+            )
+          );
         } catch (e) {
-          console.error(chalk.red(`Failed to summarize context: ${(e as Error).message}`));
+          console.error(
+            chalk.red(`Failed to summarize context: ${(e as Error).message}`)
+          );
         }
-        
       } else if (command === "save") {
         // Save raw message history to ~/.kalpana/context/
         try {
-          const savedPath = await contextManager.saveMessages(sessionId, history);
+          const savedPath = await contextManager.saveMessages(
+            sessionId,
+            history
+          );
           console.log(chalk.green("💾 Conversation saved."));
           console.log(chalk.gray(`Path: ${savedPath}`));
         } catch (e) {
-          console.error(chalk.red(`Failed to save conversation: ${(e as Error).message}`));
+          console.error(
+            chalk.red(`Failed to save conversation: ${(e as Error).message}`)
+          );
         }
-        
       } else {
-        console.log(chalk.yellow("Unknown context command. Available: status, search <query>, stats, summarize, save"));
+        console.log(
+          chalk.yellow(
+            "Unknown context command. Available: status, search <query>, stats, summarize, save"
+          )
+        );
       }
-      
+
       process.stdout.write("\n> ");
       continue;
     }
@@ -429,8 +598,12 @@ async function main() {
       console.log("  /context     - Show context management status");
       console.log("  /context search <query> - Search summarized context");
       console.log("  /context stats - Show detailed context statistics");
-      console.log("  /context summarize - Create summaries for the current conversation");
-      console.log("  /context save - Save full conversation to ~/.kalpana/context/");
+      console.log(
+        "  /context summarize - Create summaries for the current conversation"
+      );
+      console.log(
+        "  /context save - Save full conversation to ~/.kalpana/context/"
+      );
       console.log("  /help        - Show this help message");
       console.log("");
       console.log(chalk.cyan("CLI Options:"));
@@ -443,10 +616,16 @@ async function main() {
       console.log("  --save-history      - Save conversation history");
       console.log("");
       console.log(chalk.cyan("Configuration Management:"));
-      console.log("  kalpana-config setup            - Interactive setup wizard");
+      console.log(
+        "  kalpana-config setup            - Interactive setup wizard"
+      );
       console.log("  kalpana-config show             - Display current config");
-      console.log("  kalpana-config set <key> <val>  - Set configuration value");
-      console.log("  kalpana-config get <key>        - Get configuration value");
+      console.log(
+        "  kalpana-config set <key> <val>  - Set configuration value"
+      );
+      console.log(
+        "  kalpana-config get <key>        - Get configuration value"
+      );
       console.log("");
       console.log(chalk.cyan("Multi-Runtime Container:"));
       console.log("  All runtimes are pre-installed and ready:");
@@ -460,7 +639,9 @@ async function main() {
         "  Examples: 'bun run dev', 'npm start', 'python -m http.server 8000 &'"
       );
       console.log("  Use '&' for background processes");
-      console.log("  🌐 All ports automatically accessible on host (no port mapping needed)");
+      console.log(
+        "  🌐 All ports automatically accessible on host (no port mapping needed)"
+      );
       console.log("");
       console.log("You can ask questions or give instructions directly.");
       process.stdout.write("\n> ");
@@ -471,13 +652,34 @@ async function main() {
       console.log(chalk.cyan("Configuration Management:"));
       console.log("");
       console.log("Exit Kalpana and run these commands:");
-      console.log(chalk.yellow("  kalpana config setup") + "            - Interactive configuration wizard");
-      console.log(chalk.yellow("  kalpana config show") + "             - Display current configuration");
-      console.log(chalk.yellow("  kalpana config set <key> <value>") + " - Set a configuration value");
-      console.log(chalk.yellow("  kalpana config get <key>") + "        - Get a configuration value");
-      console.log(chalk.yellow("  kalpana config unset <key>") + "      - Remove a configuration value");
-      console.log(chalk.yellow("  kalpana config validate") + "         - Validate current configuration");
-      console.log(chalk.yellow("  kalpana config path") + "             - Show config file location");
+      console.log(
+        chalk.yellow("  kalpana config setup") +
+          "            - Interactive configuration wizard"
+      );
+      console.log(
+        chalk.yellow("  kalpana config show") +
+          "             - Display current configuration"
+      );
+      console.log(
+        chalk.yellow("  kalpana config set <key> <value>") +
+          " - Set a configuration value"
+      );
+      console.log(
+        chalk.yellow("  kalpana config get <key>") +
+          "        - Get a configuration value"
+      );
+      console.log(
+        chalk.yellow("  kalpana config unset <key>") +
+          "      - Remove a configuration value"
+      );
+      console.log(
+        chalk.yellow("  kalpana config validate") +
+          "         - Validate current configuration"
+      );
+      console.log(
+        chalk.yellow("  kalpana config path") +
+          "             - Show config file location"
+      );
       console.log("");
       console.log("Example API keys to configure:");
       console.log("  OPENROUTER_API_KEY     - Required for AI functionality");
@@ -488,18 +690,26 @@ async function main() {
       continue;
     }
     try {
+      // Check context window and potentially summarize before running agent
+      await checkAndManageContext(history, sessionId);
+
       console.log(chalk.gray("Thinking..."));
 
-      const { text, messages } = await runAgent(input, history).catch((agentError) => {
-        console.error(chalk.red('🚨 Agent execution error:'), agentError.message);
-        console.error(chalk.gray('Stack:'), agentError.stack);
-        
-        // Return a fallback response instead of crashing
-        return {
-          text: `❌ **Agent Error**: ${agentError.message}\n\n⚠️ The agent encountered an error but the application is still running. You can try your request again or ask for help.`,
-          messages: history // Keep existing history
-        };
-      });
+      const { text, messages } = await runAgent(input, history).catch(
+        (agentError) => {
+          console.error(
+            chalk.red("🚨 Agent execution error:"),
+            agentError.message
+          );
+          console.error(chalk.gray("Stack:"), agentError.stack);
+
+          // Return a fallback response instead of crashing
+          return {
+            text: `❌ **Agent Error**: ${agentError.message}\n\n⚠️ The agent encountered an error but the application is still running. You can try your request again or ask for help.`,
+            messages: history, // Keep existing history
+          };
+        }
+      );
 
       history.splice(0, history.length, ...messages);
 
@@ -507,7 +717,10 @@ async function main() {
         try {
           await persistHistory();
         } catch (historyError: any) {
-          console.warn(chalk.yellow('⚠️ Failed to save history:'), historyError.message);
+          console.warn(
+            chalk.yellow("⚠️ Failed to save history:"),
+            historyError.message
+          );
         }
       }
 

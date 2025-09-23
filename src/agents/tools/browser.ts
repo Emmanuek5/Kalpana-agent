@@ -18,7 +18,8 @@ import {
   refresh,
   goBack,
   goForward,
-  getAllElements
+  getAllElements,
+  navigateAndTakeScreenshot
 } from "../../tools/browser";
 import { createSafeToolWrapper } from "../safeToolWrapper";
 
@@ -271,6 +272,24 @@ export function buildBrowserTools() {
         })
       ),
       execute: createSafeToolWrapper("browser.getAllElements", getAllElements as any),
+    }),
+
+    "browser.navigateAndTakeScreenshot": tool<
+      { url: string; path?: string; fullPage?: boolean; waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'; timeout?: number; scrollWaitMs?: number },
+      { success: boolean; title?: string; url?: string; screenshot?: string; path?: string; error?: string }
+    >({
+      description: "Navigate to a URL, auto-scroll to bottom to load dynamic content, then capture a screenshot (saved to sandbox if path is provided).",
+      inputSchema: zodSchema(
+        z.object({
+          url: z.string().url().describe("URL to navigate to"),
+          path: z.string().optional().describe("File path to save screenshot (e.g., '/root/workspace/screenshot.png' or 'shots/page.png')"),
+          fullPage: z.boolean().optional().describe("Capture full page including scrolled content (default: true)"),
+          waitUntil: z.enum(['load','domcontentloaded','networkidle0','networkidle2']).optional().describe("Navigation completion event (default: networkidle2)"),
+          timeout: z.number().optional().describe("Navigation timeout in milliseconds (default: 30000)"),
+          scrollWaitMs: z.number().optional().describe("Delay between scroll steps in ms (default: 800)"),
+        })
+      ),
+      execute: createSafeToolWrapper("browser.navigateAndTakeScreenshot", navigateAndTakeScreenshot as any),
     }),
   } as const;
 }

@@ -337,8 +337,8 @@ Your primary goal is to help users with software development, debugging, researc
   - `browser.getText({ selector: ".content" })` - get text content from elements
   - `browser.getAttribute({ selector: "a", attribute: "href" })` - get element attributes
   - `browser.getAllElements({ selector: "li", getText: true })` - get data from multiple elements
-- **Page Analysis**:
   - `browser.screenshot({ path: "/root/workspace/screenshot.png" })` - capture pages
+  - `browser.navigateAndTakeScreenshot({ url: "https://example.com", path: "/root/workspace/page.png" })` - navigate, auto-scroll to bottom to load dynamic content, then capture screenshot
   - `browser.waitForElement({ selector: ".loading" })` - wait for elements to appear
   - `browser.getPageInfo()` - get page title and URL
   - `browser.evaluateScript({ script: "document.title" })` - run custom JavaScript
@@ -356,6 +356,7 @@ Your primary goal is to help users with software development, debugging, researc
 **For HyperAgent (AI-powered autonomous web tasks)**:
 - **Natural language tasks**: Describe what you want in plain English
 - **Autonomous execution**: The AI agent figures out the steps automatically
+- **Models**: The Hyperagent uses these models : 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4.1' | 'gpt-4.1-mini' | 'gpt-4.1-nano'
 - **Example usage**:
   - `hyperagent.startTask({ task: "Go to GitHub and find the most popular Python web framework" })`
   - `hyperagent.startTask({ task: "Search for apartments in San Francisco under $3000/month" })`
@@ -371,6 +372,7 @@ Your primary goal is to help users with software development, debugging, researc
 - **Available tools**:
   - `hbrowser.session.create()` - Create remote browser session
   - `hbrowser.navigate({ sessionId, url })` - Navigate within session
+  - `hbrowser.navigateAndTakeScreenshot({ sessionId, url, path })` - Navigate, auto-scroll to bottom to load dynamic content, then capture screenshot into sandbox
   - `hbrowser.scrape({ url, extractText, extractLinks, extractImages, extractMetadata })` - Direct URL scraping
   - `hbrowser.scrapeWithSession({ sessionId, url, selector })` - Session-based scraping
   - `hbrowser.session.stop(sessionId)` - Clean up session

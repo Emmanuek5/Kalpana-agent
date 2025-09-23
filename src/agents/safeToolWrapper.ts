@@ -139,6 +139,8 @@ export function getToolStartMessage(
       return `⌨️ Typing into ${chalk.cyan(arg.selector)}`;
     case "browser.screenshot":
       return `📸 Taking screenshot${arg.path ? ` to ${chalk.cyan(arg.path)}` : ''}`;
+    case "browser.navigateAndTakeScreenshot":
+      return `🌐 Navigating to ${chalk.cyan(arg.url)} and capturing screenshot${arg.path ? ` at ${chalk.cyan(arg.path)}` : ''}`;
     case "browser.waitForElement":
       return `⏳ Waiting for element ${chalk.cyan(arg.selector)}`;
     case "browser.getPageInfo":
@@ -194,6 +196,8 @@ export function getToolStartMessage(
       return `🌍 Using Hyperbrowser to navigate to ${chalk.cyan(
         arg.url || "page"
       )}`;
+    case "hbrowser.navigateAndTakeScreenshot":
+      return `🌍 Hyperbrowser navigate to ${chalk.cyan(arg.url)} and capture screenshot${arg.path ? ` at ${chalk.cyan(arg.path)}` : ''}`;
     // Google Drive tools
     case "pDrive.isAccountLinked":
       return `🔗 Checking Google Drive account status`;
@@ -646,6 +650,13 @@ export function getToolCompletionMessage(
         )}`;
       }
       return `❌ Hyperbrowser navigation failed`;
+    case "hbrowser.navigateAndTakeScreenshot":
+      if (result?.success) {
+        const title = result?.title ? ` - "${result.title.substring(0, 30)}..."` : '';
+        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
+        return `✅ Hyperbrowser navigated and captured screenshot${title} (${location})`;
+      }
+      return `❌ Hyperbrowser navigate-and-screenshot failed`;
     // Browser completions
     case "browser.goToPage":
       if (result?.success && result?.title) {
@@ -668,6 +679,13 @@ export function getToolCompletionMessage(
         return `✅ Screenshot ${location}`;
       }
       return `❌ Failed to take screenshot`;
+    case "browser.navigateAndTakeScreenshot":
+      if (result?.success) {
+        const title = result?.title ? ` - "${result.title.substring(0, 30)}..."` : '';
+        const location = result.path ? `saved to ${result.path}` : 'captured as base64';
+        return `✅ Navigated and captured screenshot${title} (${location})`;
+      }
+      return `❌ Failed to navigate and take screenshot`;
     case "browser.waitForElement":
       if (result?.success) {
         return `✅ Element ${chalk.cyan(arg.selector)} appeared`;

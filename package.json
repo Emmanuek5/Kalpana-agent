@@ -1,8 +1,21 @@
 {
   "name": "kalpana-agent",
-  "version": "1.1.5",
+  "version": "1.1.7",
   "description": "Kalpana (कल्पना) - AI development assistant with multi-runtime containerized execution, web automation, multi-modal analysis, error checking, and intelligent context management",
-  "keywords": ["ai", "assistant", "development", "docker", "automation", "web-scraping", "multi-modal", "error-checking", "context-management", "nodejs", "python", "bun"],
+  "keywords": [
+    "ai",
+    "assistant",
+    "development",
+    "docker",
+    "automation",
+    "web-scraping",
+    "multi-modal",
+    "error-checking",
+    "context-management",
+    "nodejs",
+    "python",
+    "bun"
+  ],
   "author": "Kalpana AI Team",
   "license": "MIT",
   "homepage": "https://github.com/Emmanuek5/Kalpana-agent",

@@ -61,26 +61,46 @@ export interface LineCountInput {
 }
 
 async function toHostPath(relativePath = "") {
-  const { hostVolumePath } = getActiveSandbox();
-  const p = path.resolve(hostVolumePath, relativePath);
+  const { hostVolumePath, containerVolumePath } = getActiveSandbox();
+
+  // Normalize any container-style absolute path to a sandbox-relative path
+  let rel = relativePath || "";
+  const norm = rel.replace(/\\/g, "/");
+  if (
+    norm === containerVolumePath ||
+    norm.startsWith(containerVolumePath + "/")
+  ) {
+    rel = norm.slice(containerVolumePath.length).replace(/^\/+/, "");
+  }
+
+  // Resolve against the host volume path
+  const p = path.resolve(hostVolumePath, rel);
   if (!p.startsWith(hostVolumePath))
     throw new Error("Path escapes sandbox volume");
-  
+
   // Check if the path is ignored by .gitignore
-  const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath);
+  const isIgnored = await isRelativePathIgnored(rel, hostVolumePath);
   if (isIgnored) {
-    throw new Error(`Access denied: '${relativePath}' is ignored by .gitignore`);
+    throw new Error(`Access denied: '${rel}' is ignored by .gitignore`);
   }
-  
+
   return p;
 }
 
 // Helper function to check if a path should be accessible
 async function checkPathAccess(relativePath: string): Promise<void> {
-  const { hostVolumePath } = getActiveSandbox();
-  const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath);
+  const { hostVolumePath, containerVolumePath } = getActiveSandbox();
+  let rel = relativePath || "";
+  const norm = rel.replace(/\\/g, "/");
+  if (
+    norm === containerVolumePath ||
+    norm.startsWith(containerVolumePath + "/")
+  ) {
+    rel = norm.slice(containerVolumePath.length).replace(/^\/+/, "");
+  }
+  const isIgnored = await isRelativePathIgnored(rel, hostVolumePath);
   if (isIgnored) {
-    throw new Error(`Access denied: '${relativePath}' is ignored by .gitignore`);
+    throw new Error(`Access denied: '${rel}' is ignored by .gitignore`);
   }
 }
 
