@@ -1,6 +1,35 @@
 import chalk from "chalk";
 import { toolCollector } from "../tool-collector";
 
+// Normalize provider-safe tool names back to display/original style for logs/UI.
+// Example: "fs_writeFile" -> "fs.writeFile", "docker_restartWithPorts" -> "docker.restartWithPorts",
+// "mcp_server_tool" -> "mcp.server.tool". If name already contains a dot, it is returned unchanged.
+function normalizeToolNameForDisplay(name: string): string {
+  if (!name || name.includes(".")) return name;
+  const prefixes = new Set([
+    "fs",
+    "exec",
+    "docker",
+    "browser",
+    "sandbox",
+    "notion",
+    "pDrive",
+    "gemini",
+    "localScraper",
+    "context7",
+    "docs",
+    "hyperagent",
+    "hbrowser",
+    "mcp",
+  ]);
+  for (const prefix of prefixes) {
+    if (name.startsWith(prefix + "_")) {
+      return name.replace(/_/g, ".");
+    }
+  }
+  return name;
+}
+
 // Get descriptive start message for tool execution
 export function getToolStartMessage(
   toolName: string,
@@ -893,6 +922,7 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
   toolFn: T
 ): T {
   return ((...args: any[]) => {
+    const displayName = normalizeToolNameForDisplay(toolName);
     const executionId = `${toolName}-${Date.now()}-${Math.random()
       .toString(36)
       .substr(2, 9)}`;
@@ -908,7 +938,7 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
             toolCollector.completeExecution(executionId, res);
             // Show only the completion message to save space
             const completionMessage = getToolCompletionMessage(
-              toolName,
+              displayName,
               args[0] || args,
               res
             );
@@ -920,12 +950,12 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
           .catch((error: Error) => {
             toolCollector.failExecution(executionId, error);
             console.error(
-              chalk.red(`Tool error [${toolName}]: ${error.message}`)
+              chalk.red(`Tool error [${displayName}]: ${error.message}`)
             );
             return {
               success: false,
               error: error.message,
-              toolName,
+              toolName: displayName,
               recoverable: true,
             };
           });
@@ -934,7 +964,7 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
       // For synchronous operations, just show the final message
       toolCollector.completeExecution(executionId, result);
       const completionMessage = getToolCompletionMessage(
-        toolName,
+        displayName,
         args[0] || args,
         result
       );
@@ -945,12 +975,12 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
     } catch (error) {
       toolCollector.failExecution(executionId, error as Error);
       console.error(
-        chalk.red(`Tool error [${toolName}]: ${(error as Error).message}`)
+        chalk.red(`Tool error [${displayName}]: ${(error as Error).message}`)
       );
       return {
         success: false,
         error: (error as Error).message,
-        toolName,
+        toolName: displayName,
         recoverable: true,
       };
     }

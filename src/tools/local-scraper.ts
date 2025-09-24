@@ -2,7 +2,7 @@
 // Uses local Puppeteer with AI assistance for smart content extraction
 
 import type { Browser, Page } from "puppeteer";
-import { generateObject, generateText } from "ai";
+import { generateObject } from "ai";
 import { z } from "zod";
 import { openrouter } from "../agents/system.js";
 import path from "node:path";
@@ -37,13 +37,18 @@ async function getBrowserInstance(): Promise<{ browser: Browser; page: Page }> {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
 
-    // Set up error handlers
+    // Set up error handlers (only once)
     globalPage.on("error", (err) => {
-      console.warn("Local scraper page error:", err.message);
+      console.debug("Local scraper page error:", err.message);
     });
 
     globalPage.on("pageerror", (err) => {
-      console.warn("Local scraper page script error:", err.message);
+      console.debug("Local scraper page script error:", err.message);
+    });
+
+    // Handle request errors silently
+    globalPage.on("requestfailed", (req) => {
+      console.debug("Request failed (ignored):", req.url());
     });
   }
 
@@ -146,23 +151,40 @@ export async function localScrape(
   try {
     const { browser, page } = await getBrowserInstance();
 
-    // Configure page settings
+    // Configure page settings with proper request handling
     if (options.ignoreImages !== false) {
+      // Remove existing listeners to prevent duplicates
+      page.removeAllListeners("request");
+
       await page.setRequestInterception(true);
       page.on("request", (req) => {
-        if (
-          req.resourceType() === "image" ||
-          req.resourceType() === "stylesheet"
-        ) {
-          req.abort();
-        } else {
-          req.continue();
+        try {
+          // Check if request is already handled
+          if (req.isInterceptResolutionHandled()) {
+            return;
+          }
+
+          if (
+            req.resourceType() === "image" ||
+            req.resourceType() === "stylesheet"
+          ) {
+            req.abort().catch(() => {
+              // Silently ignore abort errors (request already handled)
+            });
+          } else {
+            req.continue().catch(() => {
+              // Silently ignore continue errors (request already handled)
+            });
+          }
+        } catch (error: any) {
+          // Silently ignore all request handling errors
+          console.debug("Request handling error (ignored):", error.message);
         }
       });
     }
 
     // Navigate to URL
-    
+    console.log(`🌐 Navigating to: ${options.url}`);
     await page.goto(options.url, {
       waitUntil: "networkidle2",
       timeout: options.timeout || 30000,
@@ -182,7 +204,7 @@ export async function localScrape(
 
     // Smart scrolling to load dynamic content
     const maxScrolls = options.maxScrolls || 3;
-   
+
     await smartScroll(page, maxScrolls);
 
     // Extract basic page information
@@ -213,25 +235,21 @@ export async function localScrape(
 
     // Extract metadata if requested
     if (options.extractMetadata) {
-      console.log(`📋 Extracting metadata...`);
       result.metadata = await extractMetadata(page);
     }
 
     // Extract links if requested
     if (options.extractLinks) {
-      console.log(`🔗 Extracting links...`);
       result.links = await extractLinks(page);
     }
 
     // Extract images if requested
     if (options.extractImages) {
-      console.log(`🖼️ Extracting images...`);
       result.images = await extractImages(page);
     }
 
     // Take screenshot if requested
     if (options.screenshot) {
-      console.log(`📸 Taking screenshot...`);
       const screenshot = await takeScreenshot(page, options.screenshotPath);
       result.screenshot = screenshot.screenshot;
       result.screenshotPath = screenshot.path;
@@ -239,7 +257,6 @@ export async function localScrape(
 
     // AI-powered content analysis if requested
     if (options.useAI !== false) {
-      console.log(`🤖 Running AI content analysis...`);
       result.aiAnalysis = await analyzeContentWithAI(
         textContent,
         pageInfo.html,
@@ -286,8 +303,8 @@ async function smartScroll(page: Page, maxScrolls: number = 3): Promise<void> {
     // Scroll back to top
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "smooth" }));
     await new Promise((resolve) => setTimeout(resolve, 500));
-  } catch (error) {
-    console.warn("Smart scroll error:", error);
+  } catch (error: any) {
+    console.debug("Smart scroll error (ignored):", error.message);
   }
 }
 
@@ -394,8 +411,8 @@ async function takeScreenshot(
       const screenshot = await page.screenshot(screenshotOptions);
       return { screenshot: screenshot as string };
     }
-  } catch (error) {
-    console.warn("Screenshot error:", error);
+  } catch (error: any) {
+    console.debug("Screenshot error (ignored):", error.message);
     return {};
   }
 }
@@ -444,8 +461,8 @@ Be thorough but concise in your analysis.`;
     });
 
     return analysis;
-  } catch (error) {
-    console.warn("AI analysis error:", error);
+  } catch (error: any) {
+    console.debug("AI analysis error (ignored):", error.message);
 
     // Fallback analysis
     return {
@@ -474,8 +491,6 @@ export async function quickExtractText(
   error?: string;
 }> {
   try {
-    console.log(`📖 Quick text extraction from: ${url}`);
-
     const result = await localScrape({
       url,
       timeout,
@@ -514,8 +529,6 @@ export async function summarizeUrl(
   error?: string;
 }> {
   try {
-    console.log(`📝 AI summarization of: ${url}`);
-
     const result = await localScrape({
       url,
       useAI: true,
@@ -555,8 +568,6 @@ export async function extractStructuredData(
   dataPrompt: string
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
-    console.log(`🔍 Structured data extraction from: ${url}`);
-
     const result = await localScrape({
       url,
       useAI: true,
@@ -602,7 +613,7 @@ export async function cleanupLocalScraper(): Promise<void> {
       await globalBrowser.close();
       globalBrowser = null;
     }
-  } catch (error) {
-    console.warn("Local scraper cleanup error:", error);
+  } catch (error: any) {
+    console.debug("Local scraper cleanup error (ignored):", error.message);
   }
 }

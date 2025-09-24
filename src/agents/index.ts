@@ -25,6 +25,30 @@ import { mcpManager } from "../mcp";
 import { contextManager } from "../context-manager.js";
 import { calculateRemainingContext } from "../token-counter.js";
 
+// Sanitize tool names to satisfy providers that restrict tool name characters
+// Allowed pattern per OpenAI: ^[a-zA-Z0-9_-]+$
+function sanitizeToolNames<T extends Record<string, any>>(
+  tools: T
+): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+  const usedNames = new Set<string>();
+
+  for (const [originalName, def] of Object.entries(tools)) {
+    let base = originalName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    if (!base) base = "tool";
+
+    let name = base;
+    let counter = 2;
+    while (usedNames.has(name)) {
+      name = `${base}_${counter++}`;
+    }
+    usedNames.add(name);
+    sanitized[name] = def;
+  }
+
+  return sanitized;
+}
+
 export async function runAgent(
   userInstruction: string,
   history: ModelMessage[] = [],
@@ -102,14 +126,19 @@ export async function runAgent(
     { role: "user", content: userInstruction },
   ];
 
-  const result = await generateText({
-    model,
-    messages: allMessages,
-    system,
-    stopWhen: stepCountIs(30),
-    providerOptions: { openrouter: { include_reasoning: false } },
-    tools,
-  });
+  let result: any;
+  try {
+    result = await generateText({
+      model,
+      messages: allMessages,
+      system,
+      stopWhen: stepCountIs(30),
+      providerOptions: { openrouter: { include_reasoning: false } },
+      tools: sanitizeToolNames(tools),
+    });
+  } catch (error) {
+    console.log(error);
+  }
 
   const responseMessages = (result as any).response?.messages as
     | ModelMessage[]

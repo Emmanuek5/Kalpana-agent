@@ -2,6 +2,13 @@
 
 All notable changes to AI Container will be documented in this file.
 
+## [1.1.11] - 2025-09-24
+
+### Fixed
+
+- Sanitized tool names sent to providers to satisfy OpenAI function name pattern (^[a-zA-Z0-9_-]+$). This resolves `Invalid 'tools[0].name'` errors when using OpenAI-backed models via OpenRouter. Tool keys like `fs.writeFile` are now transformed to `fs_writeFile` transparently before requests.
+- Normalized sanitized tool names back to dotted originals in `safeToolWrapper` for clean logging and messages (e.g., `fs_writeFile` displays as `fs.writeFile`).
+
 ## [1.1.0] - 2025-01-23
 
 ### Added
@@ -21,7 +28,7 @@ All notable changes to AI Container will be documented in this file.
   - Persistent storage in ~/.kalpana/context/ for session continuity
   - Searchable history with `/context search <query>` command
   - Token usage monitoring with `/context` and `/context stats` commands
-- **Error Checking Tools**: 
+- **Error Checking Tools**:
   - `errorCheck.checkFile` for single file validation with line-by-line error reporting
   - `errorCheck.validateProject` for comprehensive project health checks
   - Automatic file type detection with smart content analysis
