@@ -80,8 +80,8 @@ export async function launchSandbox(
   const containerVolumePath = "/root/workspace";
 
   // Check if we're on Windows (Docker Desktop) where host networking doesn't work the same
-  const isWindows = process.platform === 'win32';
-  
+  const isWindows = process.platform === "win32";
+
   const containerConfig: any = {
     image,
     name: undefined,

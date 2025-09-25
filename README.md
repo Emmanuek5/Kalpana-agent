@@ -49,6 +49,20 @@ bun install
 
 ### Configuration
 
+#### Browser logging
+
+By default, browser automation logs (Puppeteer request failures, page errors, and navigation messages) are suppressed to keep the console clean. To enable verbose logging for debugging, set:
+
+```bash
+# Windows PowerShell
+$env:SCRAPER_DEBUG = "1"
+
+# Bash
+export SCRAPER_DEBUG=1
+```
+
+When enabled, you'll see messages like request failures (ignored), page script errors, navigation traces, and cleanup issues from `src/tools/local-scraper.ts` and `src/tools/browser.ts`.
+
 **Global Installation (Recommended):**
 
 After installing Kalpana globally, run the interactive setup:
@@ -60,9 +74,10 @@ kalpana-config setup
 This will guide you through configuring your API keys and preferences. The configuration is stored globally in `~/.kalpana/config.json`.
 
 **Configuration Commands:**
+
 ```bash
 kalpana-config setup              # Interactive setup wizard
-kalpana-config show               # Display current configuration  
+kalpana-config show               # Display current configuration
 kalpana-config set <key> <value>  # Set a configuration value
 kalpana-config get <key>          # Get a configuration value
 kalpana-config validate           # Validate configuration
@@ -78,12 +93,17 @@ kalpana-config mcp    # Opens ~/mcp.json in your default editor
 ```
 
 **Example MCP Configuration:**
+
 ```json
 {
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"]
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/allowed/files"
+      ]
     },
     "brave-search": {
       "command": "npx",
@@ -109,6 +129,7 @@ To avoid tool name conflicts across servers, prefix tool calls with the server n
 **Practical Examples in `mcp.json`:**
 
 1. **SSE Transport (e.g., DeepWiki for documentation search)**:
+
    ```json
    {
      "mcpServers": {
@@ -122,9 +143,11 @@ To avoid tool name conflicts across servers, prefix tool calls with the server n
      }
    }
    ```
+
    This connects to a remote DeepWiki server via SSE for fetching documentation tools. Authentication is handled via headers.
 
 2. **HTTP Transport (e.g., Context7 for advanced search)**:
+
    ```json
    {
      "mcpServers": {
@@ -138,6 +161,7 @@ To avoid tool name conflicts across servers, prefix tool calls with the server n
      }
    }
    ```
+
    Use HTTP for Context7's interactive documentation tools that may involve streaming responses. Sessions are maintained for multi-step queries.
 
 3. **Stdio Transport (e.g., Local Filesystem Server)**:
@@ -147,7 +171,11 @@ To avoid tool name conflicts across servers, prefix tool calls with the server n
        "filesystem": {
          "transport": "stdio",
          "command": "npx",
-         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"],
+         "args": [
+           "-y",
+           "@modelcontextprotocol/server-filesystem",
+           "/path/to/allowed/files"
+         ],
          "env": {
            "ALLOWED_PATHS": "/path/to/allowed/files"
          }
@@ -158,6 +186,7 @@ To avoid tool name conflicts across servers, prefix tool calls with the server n
    This runs a local filesystem MCP server via Stdio, perfect for file operations without network overhead.
 
 **Additional Notes:**
+
 - **Dynamic Loading**: Servers are loaded dynamically at runtime. Failed servers (e.g., due to connection errors or invalid configs) are ignored, and Kalpana continues with available tools.
 - **Error Handling**: Check the console for loading errors. Use the `/mcp` in-chat command to verify status.
 - **CLI Testing**: Test your MCP configuration independently with:
@@ -228,6 +257,7 @@ bun run interactive
 ### CLI Options
 
 **Sandbox Configuration:**
+
 ```bash
 # Global installation
 kalpana --sandbox .                              # Current directory
@@ -243,11 +273,13 @@ bun run start --sandbox ../shared-workspace
 ```
 
 **Available CLI Options:**
+
 - `--sandbox <path>` - Set custom sandbox directory (supports relative and absolute paths)
 - `--save-history` - Save conversation history to `history.json`
 - `--history` - Alias for `--save-history`
 
 **In-Chat Commands:**
+
 - `/help` - Show help message and available commands
 - `/mcp` - Show MCP server status and loaded tools
 - `/context` - Show context manager status and token usage
@@ -292,6 +324,7 @@ bun run start --sandbox ../shared-workspace
 ### Multi-Language Error Checking
 
 **Supported Languages:**
+
 - **JavaScript/TypeScript**: Syntax validation, ESLint integration, import/export checking
 - **Python**: Indentation validation, Python 2/3 compatibility, import analysis
 - **PHP**: Syntax checking, deprecated function detection, variable validation
@@ -301,6 +334,7 @@ bun run start --sandbox ../shared-workspace
 - **C/C++**: Memory leak detection, syntax checking, modern C++ recommendations
 
 **Error Checking Features:**
+
 - **Comprehensive validation**: Syntax errors, type errors, linting issues, best practices
 - **Line-by-line reporting**: Precise error locations with detailed descriptions
 - **Project-wide analysis**: Validate entire codebases including critical configuration files
@@ -308,6 +342,7 @@ bun run start --sandbox ../shared-workspace
 - **Smart file detection**: Automatically detects file types and applies appropriate validation rules
 
 **Usage Examples:**
+
 ```bash
 # Check individual files
 "Check this Python script for errors: ./app.py"
@@ -321,12 +356,14 @@ bun run start --sandbox ../shared-workspace
 ### Smart Context Management
 
 **Intelligent Memory System:**
+
 - **Automatic summarization**: Preserves conversation history within 230k token limits
 - **Importance-based retention**: Prioritizes critical discussions (errors, configurations, decisions)
 - **Silent operation**: Works seamlessly in the background without interrupting workflow
 - **Persistent storage**: Context saved to `~/.kalpana/context/` for session continuity
 
 **Context Features:**
+
 - **Smart truncation**: Only summarizes when approaching token limits (225k/230k)
 - **Key information preservation**: Technical details, code snippets, and important decisions retained
 - **Searchable history**: Find information from previous conversations with `/context search`
@@ -334,6 +371,7 @@ bun run start --sandbox ../shared-workspace
 - **Configurable thresholds**: Optimized for maximum context preservation
 
 **Context Commands:**
+
 ```bash
 /context                    # Show current token usage and status
 /context search "docker"    # Search conversation history
@@ -343,11 +381,13 @@ bun run start --sandbox ../shared-workspace
 ### Browser Automation Capabilities
 
 **Local Browser Tools:**
+
 - Complete Puppeteer automation for localhost testing
 - Click, type, scroll, screenshot, and form interactions
 - Fast execution for development workflows
 
 **HyperBrowser (Remote):**
+
 - Cloud-based browser instances with advanced features
 - Automatic captcha solving and ad blocking
 - Anti-detection with residential proxies
@@ -355,12 +395,14 @@ bun run start --sandbox ../shared-workspace
 - Intelligent web scraping with structured data extraction
 
 **HyperAgent (AI-Powered):**
+
 - Natural language web task automation
 - Examples: "Find the best laptop under $1000 on Amazon"
 - Autonomous multi-step workflows with AI decision-making
 - Handles complex research and data gathering tasks
 
 **Web Scraping Features:**
+
 - Extract text content, links, images, and metadata
 - Wait for dynamic content to load
 - Custom CSS selectors for precise targeting
@@ -377,4 +419,3 @@ bun run start --sandbox ../shared-workspace
 **Kalpana** - Where imagination meets creation in AI-powered development.
 
 This project was created using `bun init` in bun v1.2.15. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
-

@@ -170,10 +170,10 @@ async function resolveProjectMcpPath(explicit?: string): Promise<string> {
   if (explicit) return path.resolve(explicit);
 
   const candidates = [
-    path.join(os.homedir(), "mcp.json"),                    // Primary: ~/mcp.json
-    path.join(os.homedir(), ".cursor", "mcp.json"),         // Cursor's location
-    path.join(process.cwd(), "mcp.json"),                   // Project local
-    path.join(process.cwd(), ".cursor", "mcp.json"),        // Project .cursor
+    path.join(os.homedir(), "mcp.json"), // Primary: ~/mcp.json
+    path.join(os.homedir(), ".cursor", "mcp.json"), // Cursor's location
+    path.join(process.cwd(), "mcp.json"), // Project local
+    path.join(process.cwd(), ".cursor", "mcp.json"), // Project .cursor
   ];
 
   for (const p of candidates) {
@@ -182,8 +182,6 @@ async function resolveProjectMcpPath(explicit?: string): Promise<string> {
       return p;
     } catch {}
   }
-
-  
 
   // default to first candidate even if missing; caller will handle read error
   return candidates[0] as string;

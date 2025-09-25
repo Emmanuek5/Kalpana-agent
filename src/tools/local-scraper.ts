@@ -39,16 +39,22 @@ async function getBrowserInstance(): Promise<{ browser: Browser; page: Page }> {
 
     // Set up error handlers (only once)
     globalPage.on("error", (err) => {
-      console.debug("Local scraper page error:", err.message);
+      if (process.env.SCRAPER_DEBUG === "1") {
+        console.debug("Local scraper page error:", err.message);
+      }
     });
 
     globalPage.on("pageerror", (err) => {
-      console.debug("Local scraper page script error:", err.message);
+      if (process.env.SCRAPER_DEBUG === "1") {
+        console.debug("Local scraper page script error:", err.message);
+      }
     });
 
-    // Handle request errors silently
+    // Handle request errors silently (only log when explicitly enabled)
     globalPage.on("requestfailed", (req) => {
-      console.debug("Request failed (ignored):", req.url());
+      if (process.env.SCRAPER_DEBUG === "1") {
+        console.debug("Request failed (ignored):", req.url());
+      }
     });
   }
 
@@ -178,13 +184,17 @@ export async function localScrape(
           }
         } catch (error: any) {
           // Silently ignore all request handling errors
-          console.debug("Request handling error (ignored):", error.message);
+          if (process.env.SCRAPER_DEBUG === "1") {
+            console.debug("Request handling error (ignored):", error.message);
+          }
         }
       });
     }
 
     // Navigate to URL
-    console.log(`🌐 Navigating to: ${options.url}`);
+    if (process.env.SCRAPER_DEBUG === "1") {
+      console.log(`🌐 Navigating to: ${options.url}`);
+    }
     await page.goto(options.url, {
       waitUntil: "networkidle2",
       timeout: options.timeout || 30000,
@@ -304,7 +314,9 @@ async function smartScroll(page: Page, maxScrolls: number = 3): Promise<void> {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "smooth" }));
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error: any) {
-    console.debug("Smart scroll error (ignored):", error.message);
+    if (process.env.SCRAPER_DEBUG === "1") {
+      console.debug("Smart scroll error (ignored):", error.message);
+    }
   }
 }
 
@@ -412,7 +424,9 @@ async function takeScreenshot(
       return { screenshot: screenshot as string };
     }
   } catch (error: any) {
-    console.debug("Screenshot error (ignored):", error.message);
+    if (process.env.SCRAPER_DEBUG === "1") {
+      console.debug("Screenshot error (ignored):", error.message);
+    }
     return {};
   }
 }
@@ -474,7 +488,9 @@ Be thorough but concise in your analysis.`;
 
     return analysis;
   } catch (error: any) {
-    console.debug("AI analysis error (ignored):", error.message);
+    if (process.env.SCRAPER_DEBUG === "1") {
+      console.debug("AI analysis error (ignored):", error.message);
+    }
 
     // Fallback analysis
     return {
@@ -626,6 +642,8 @@ export async function cleanupLocalScraper(): Promise<void> {
       globalBrowser = null;
     }
   } catch (error: any) {
-    console.debug("Local scraper cleanup error (ignored):", error.message);
+    if (process.env.SCRAPER_DEBUG === "1") {
+      console.debug("Local scraper cleanup error (ignored):", error.message);
+    }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "kalpana-agent",
-  "version": "1.1.11",
+  "version": "1.1.13",
   "description": "Kalpana (कल्पना) - AI development assistant with multi-runtime containerized execution, web automation, multi-modal analysis, error checking, and intelligent context management",
   "keywords": [
     "ai",
@@ -73,11 +73,13 @@
     "@modelcontextprotocol/sdk": "^1.3.1",
     "@notionhq/client": "^2.2.15",
     "@openrouter/ai-sdk-provider": "^1.2.0",
+    "@types/blessed": "^0.1.25",
     "@types/marked": "^6.0.0",
     "@types/marked-terminal": "^6.1.1",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "ai": "^5.0.48",
+    "blessed": "^0.1.81",
     "chalk": "^5.6.2",
     "dockerode": "^4.0.8",
     "dotenv": "^17.2.2",
