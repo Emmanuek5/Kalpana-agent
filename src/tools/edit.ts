@@ -2,14 +2,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getActiveSandbox } from "../sandbox";
 import { generateObject } from "ai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { getAIProvider } from "../agents/system.js";
 import { z } from "zod";
 
-function getOpenRouterClient() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    return undefined;
+function getAIClient() {
+  const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+
+  if (aiProviderType === "ollama") {
+    // For Ollama, we don't need API key validation
+    return getAIProvider();
+  } else {
+    // For OpenRouter, check if API key exists
+    if (!process.env.OPENROUTER_API_KEY) {
+      return undefined;
+    }
+    return getAIProvider();
   }
-  return createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY });
 }
 
 export interface SearchReplaceInput {
@@ -141,11 +149,14 @@ export async function subAgentWrite({
   instruction,
   createIfNotExists = true,
 }: SubAgentWriteInput) {
-  const openrouter = getOpenRouterClient();
-  if (!openrouter) {
-    throw new Error(
-      "OpenRouter API key is required for sub-agent functionality"
-    );
+  const aiClient = getAIClient();
+  if (!aiClient) {
+    const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+    const errorMsg =
+      aiProviderType === "ollama"
+        ? "Failed to connect to Ollama. Make sure Ollama is running and accessible."
+        : "OpenRouter API key is required for sub-agent functionality";
+    throw new Error(errorMsg);
   }
 
   const target = toHostPath(relativePath);
@@ -187,9 +198,21 @@ Instruction: ${instruction}
 Please create a new file according to the instruction. Return the complete file content and a summary of what was created.`;
 
   try {
-    const model = openrouter(
-      process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini"
-    );
+    // Get model ID based on provider
+    const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+    let modelId: string;
+
+    if (aiProviderType === "ollama") {
+      modelId =
+        process.env.OLLAMA_MODEL ||
+        process.env.SUB_AGENT_MODEL_ID ||
+        process.env.MODEL_ID ||
+        "llama3.2";
+    } else {
+      modelId = process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini";
+    }
+
+    const model = aiClient.languageModel(modelId);
 
     const result = await generateObject({
       model,

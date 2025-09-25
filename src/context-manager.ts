@@ -1,6 +1,6 @@
 import { type ModelMessage } from "ai";
 import { generateText, generateObject } from "ai";
-import { openrouter } from "./agents/system.js";
+import { getAIProvider } from "./agents/system.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -325,7 +325,18 @@ export class ContextManager {
       .join("\n\n");
 
     try {
-      const model = openrouter(this.config.summaryModel);
+      const aiProvider = getAIProvider();
+      const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+
+      let modelId: string;
+      if (aiProviderType === "ollama") {
+        modelId =
+          process.env.OLLAMA_MODEL || this.config.summaryModel || "llama3.2";
+      } else {
+        modelId = this.config.summaryModel;
+      }
+
+      const model = aiProvider.languageModel(modelId);
 
       const { object: assessment } = await generateObject({
         model,
@@ -432,7 +443,18 @@ Provide a structured assessment with reasoning for the importance level.`,
    */
   private async summarizeSegment(segment: ConversationSegment): Promise<void> {
     try {
-      const model = openrouter(this.config.summaryModel);
+      const aiProvider = getAIProvider();
+      const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+
+      let modelId: string;
+      if (aiProviderType === "ollama") {
+        modelId =
+          process.env.OLLAMA_MODEL || this.config.summaryModel || "llama3.2";
+      } else {
+        modelId = this.config.summaryModel;
+      }
+
+      const model = aiProvider.languageModel(modelId);
 
       const conversationText = segment.messages
         .map((msg) => {

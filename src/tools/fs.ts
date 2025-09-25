@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getActiveSandbox } from "../sandbox";
 import { generateText } from "ai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { getAIProvider } from "../agents/system.js";
 import { isRelativePathIgnored } from "../utils/gitignore";
 
 export interface WriteFileInput {
@@ -193,13 +193,17 @@ export async function fsListDir({
   if (!recursive) {
     const entries = await fs.readdir(target, { withFileTypes: true });
     const filteredEntries = [];
-    
+
     for (const e of entries) {
       if (ignoredDirs.has(e.name)) continue;
-      
+
       const entryRelativePath = path.posix.join(relativePath, e.name);
-      const isIgnored = await isRelativePathIgnored(entryRelativePath, hostVolumePath, e.isDirectory());
-      
+      const isIgnored = await isRelativePathIgnored(
+        entryRelativePath,
+        hostVolumePath,
+        e.isDirectory()
+      );
+
       if (!isIgnored) {
         filteredEntries.push({
           name: e.name,
@@ -208,7 +212,7 @@ export async function fsListDir({
         });
       }
     }
-    
+
     return filteredEntries;
   }
 
@@ -226,9 +230,13 @@ export async function fsListDir({
 
         const fullPath = path.join(dirPath, entry.name);
         const relativePath = path.posix.join(relativeBase, entry.name);
-        
+
         // Check if this entry is ignored by .gitignore
-        const isIgnored = await isRelativePathIgnored(relativePath, hostVolumePath, entry.isDirectory());
+        const isIgnored = await isRelativePathIgnored(
+          relativePath,
+          hostVolumePath,
+          entry.isDirectory()
+        );
         if (isIgnored) {
           continue;
         }
@@ -373,17 +381,26 @@ export async function summarizeFile({ relativePath }: FileSummaryInput) {
 
   // Create a sub-agent to analyze the file
   try {
-    const openrouter = process.env.OPENROUTER_API_KEY
-      ? createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })
-      : undefined;
+    const aiProvider = getAIProvider();
+    const aiProviderType = process.env.AI_PROVIDER || "openrouter";
 
-    if (!openrouter) {
+    // For OpenRouter, check if API key is available
+    if (aiProviderType === "openrouter" && !process.env.OPENROUTER_API_KEY) {
       throw new Error("OpenRouter API key not configured");
     }
 
-    const model = openrouter(
-      process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini"
-    );
+    let modelId: string;
+    if (aiProviderType === "ollama") {
+      modelId =
+        process.env.OLLAMA_MODEL ||
+        process.env.SUB_AGENT_MODEL_ID ||
+        process.env.MODEL_ID ||
+        "llama3.2";
+    } else {
+      modelId = process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini";
+    }
+
+    const model = aiProvider.languageModel(modelId);
 
     const { text: summary } = await generateText({
       model,

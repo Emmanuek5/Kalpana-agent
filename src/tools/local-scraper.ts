@@ -4,7 +4,7 @@
 import type { Browser, Page } from "puppeteer";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { openrouter } from "../agents/system.js";
+import { getAIProvider } from "../agents/system.js";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { getActiveSandbox } from "../sandbox.js";
@@ -426,9 +426,21 @@ async function analyzeContentWithAI(
   customPrompt?: string
 ): Promise<ContentAnalysis> {
   try {
-    const model = openrouter(
-      process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini"
-    );
+    const aiProvider = getAIProvider();
+    const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+
+    let modelId: string;
+    if (aiProviderType === "ollama") {
+      modelId =
+        process.env.OLLAMA_MODEL ||
+        process.env.SUB_AGENT_MODEL_ID ||
+        process.env.MODEL_ID ||
+        "llama3.2";
+    } else {
+      modelId = process.env.SUB_AGENT_MODEL_ID || "openai/gpt-4o-mini";
+    }
+
+    const model = aiProvider.languageModel(modelId);
 
     // Truncate content if too long (keep first 8000 chars)
     const truncatedText =

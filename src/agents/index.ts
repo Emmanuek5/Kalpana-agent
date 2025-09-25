@@ -6,7 +6,7 @@ import {
   zodSchema,
   type ModelMessage,
 } from "ai";
-import { openrouter, buildSystemPrompt } from "./system";
+import { getAIProvider, buildSystemPrompt } from "./system";
 import { buildSandboxTools } from "./tools/sandbox";
 import { buildDockerTools } from "./tools/docker";
 import { buildFsTools } from "./tools/fs";
@@ -54,7 +54,19 @@ export async function runAgent(
   history: ModelMessage[] = [],
   useInteractiveProgress = false
 ) {
-  const model = openrouter(process.env.MODEL_ID || "openai/gpt-4o-mini");
+  const aiProvider = getAIProvider();
+
+  // Get model ID based on provider
+  const aiProviderType = process.env.AI_PROVIDER || "openrouter";
+
+  let modelId: string;
+  if (aiProviderType === "ollama") {
+    modelId = process.env.OLLAMA_MODEL || process.env.MODEL_ID || "llama3.2";
+  } else {
+    modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
+  }
+
+  const model = aiProvider.languageModel(modelId);
   const system = await buildSystemPrompt();
 
   // Filter and ensure messages are properly formatted as ModelMessage[]
@@ -69,7 +81,6 @@ export async function runAgent(
   });
 
   // Apply context management to keep within token limits
-  const modelId = process.env.MODEL_ID || "openai/gpt-4o-mini";
   const managedHistory = await contextManager.manageContext(
     filteredHistory,
     system,
@@ -128,14 +139,22 @@ export async function runAgent(
 
   let result: any;
   try {
-    result = await generateText({
+    const generateOptions: any = {
       model,
       messages: allMessages,
       system,
       stopWhen: stepCountIs(30),
-      providerOptions: { openrouter: { include_reasoning: false } },
       tools: sanitizeToolNames(tools),
-    });
+    };
+
+    // Add provider-specific options
+    if (aiProviderType === "openrouter") {
+      generateOptions.providerOptions = {
+        openrouter: { include_reasoning: false },
+      };
+    }
+
+    result = await generateText(generateOptions);
   } catch (error) {
     console.log(error);
   }
