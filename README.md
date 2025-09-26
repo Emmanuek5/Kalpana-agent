@@ -241,6 +241,9 @@ kalpana
 
 # Interactive CLI (Enhanced UI)
 kalpana-interactive
+
+# Experimental OpenTUI UI (fallbacks to Ink if unavailable)
+kalpana-opentui
 ```
 
 **Local Development:**
