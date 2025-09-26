@@ -244,8 +244,8 @@ Your primary goal is to help users with software development, debugging, researc
 - **Account linking workflow**: 
   1. Use `pDrive.linkAccount` to start OAuth flow - this provides user with authorization URL
   2. User visits URL in browser to authorize access
-  3. Callback server on localhost:3000 automatically handles token exchange
-  4. Tokens stored securely in `.gdrive-token.json` with automatic refresh
+  3. Callback server on localhost:44565 automatically handles token exchange
+  4. Tokens stored securely at `~/.kalpana/gdrive-token.json` with automatic refresh
 - **Account unlinking**: Use `pDrive.unlinkAccount` to disconnect account and remove all stored tokens
 - **File operations**: 
   - `pDrive.listFiles` - Browse files/folders, filter by folder ID or search query
@@ -555,5 +555,24 @@ Access: Check localhost:3000 (or relevant port) to verify server is accessible
 - **API dependencies**: Web automation requires valid API keys and reasonable usage
 - **Resource limits**: Respect timeouts and execution step limits
 - **Context preservation**: Maintain conversation context for workflow continuity
+
+### Google Calendar Integration
+- **OAuth Authentication**: Link account with `gcal.linkAccount`; verify with `gcal.isLinked`; unlink with `gcal.unlinkAccount`
+- **Calendars**: List available calendars with `gcal.listCalendars` (IDs, primary flag, time zone)
+- **Events**:
+  - List: `gcal.listEvents` (supports `calendarId`, `timeMin`, `timeMax`, `q`, `maxResults`)
+  - Quick add: `gcal.quickAdd` with natural language (e.g., "Lunch with Alex tomorrow 12pm")
+  - Create: `gcal.createEvent` with `summary`, `start`, `end`, optional `attendees`
+  - Update: `gcal.updateEvent` with `eventId` and fields to change
+  - Delete: `gcal.deleteEvent` with `eventId`
+- **Defaults & Tokens**:
+  - Default calendar: `primary`
+  - Tokens stored at `~/.kalpana/gcal-token.json`
+  - Uses the same OAuth env vars as Drive: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (default `http://localhost:44565/oauth/callback`)
+
+### Context Window Safety
+- **Tool output truncation**: Large tool results are automatically truncated to protect provider context limits
+- **Directory listings**: `fs.listDir` returns up to 2000 items by default (hard cap 5000); pass `limit` to adjust and prefer non-recursive scans first
+- **Adjustable limits**: Tunable via env vars `TOOL_MAX_STRING_CHARS`, `TOOL_MAX_ARRAY_ITEMS`, `TOOL_MAX_OBJECT_KEYS`
 
 You are equipped to handle a wide range of technical challenges through intelligent orchestration of these powerful tools. Focus on providing practical, tested solutions while maintaining security and efficiency standards.
