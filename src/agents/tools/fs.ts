@@ -54,36 +54,51 @@ export function buildFsTools() {
     }),
 
     "fs.listDir": tool<
-      { relativePath?: string; recursive?: boolean },
+      { relativePath?: string; recursive?: boolean; limit?: number },
       { name: string; type: string; path: string }[]
     >({
       description:
-        "List files in a directory within the sandbox volume. Use recursive=true for deep directory scanning.",
+        "List files in a directory within the sandbox volume. Defaults to returning up to 2000 items to protect context limits. Use 'limit' to adjust and prefer non-recursive scans first.",
       inputSchema: zodSchema(
         z.object({
           relativePath: z.string().optional(),
           recursive: z.boolean().optional(),
+          limit: z
+            .number()
+            .optional()
+            .describe("Max entries to return (default 2000)"),
         })
       ),
       execute: createSafeToolWrapper("fs.listDir", async (args) => {
+        const HARD_MAX = 5000;
+        const DEFAULT_LIMIT = 2000;
+        const limit = Math.max(
+          1,
+          Math.min(args?.limit ?? DEFAULT_LIMIT, HARD_MAX)
+        );
         const res = (await fsListDir(args as any)) as any;
+        const entries = Array.isArray(res) ? res : [];
+        const capped = entries.slice(0, limit);
         try {
-          const entries = Array.isArray(res) ? res : [];
           console.log(
             chalk.gray(
               `[fs.listDir] ${args?.relativePath ?? "."} -> ${
                 entries.length
-              } entries`
+              } entries (returning ${capped.length})`
             )
           );
-          for (const e of entries.slice(0, 10)) {
+          for (const e of capped.slice(0, 10)) {
             console.log(chalk.gray(`  - ${e.type} ${e.path}`));
           }
-          if (entries.length > 10) {
-            console.log(chalk.gray(`  ... (${entries.length - 10} more)`));
+          if (entries.length > capped.length) {
+            console.log(
+              chalk.gray(
+                `  ... (omitted ${entries.length - capped.length} more)`
+              )
+            );
           }
         } catch {}
-        return res;
+        return capped;
       }),
     }),
 

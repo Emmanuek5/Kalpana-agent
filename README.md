@@ -10,6 +10,7 @@
 - **Flexible Sandbox**: Custom sandbox directories with `--sandbox` option for project-specific workspaces
 - **Multi-Modal AI Analysis**: Analyze images, PDFs, videos, and audio files using Google Gemini AI
 - **Google Drive Integration**: Seamlessly work with files from your Google Drive
+- **Google Calendar Integration**: Create, list, update, and delete calendar events with OAuth-based linking
 - **Advanced Web Automation**: Complete browser automation with local Puppeteer, remote HyperBrowser, and AI-powered HyperAgent
 - **Intelligent Web Scraping**: Extract content from websites with captcha solving and ad blocking
 - **Documentation Access**: Fetch docs using Context7 or direct URL access
@@ -412,6 +413,7 @@ bun run start --sandbox ../shared-workspace
 
 - **[Gemini AI Integration](./README-Gemini.md)** - Complete guide for multi-modal file analysis
 - **[Google Drive Integration](./README-GoogleDrive.md)** - Setup and usage for cloud file operations
+- **[Google Calendar Integration](./README-GoogleCalendar.md)** - Setup and usage for calendar operations (link account, list/create/update/delete events)
 - **[Docker Setup](./README-Docker.md)** - Custom container configuration
 
 ---

@@ -9,6 +9,26 @@ All notable changes to AI Container will be documented in this file.
 - Sanitized tool names sent to providers to satisfy OpenAI function name pattern (^[a-zA-Z0-9_-]+$). This resolves `Invalid 'tools[0].name'` errors when using OpenAI-backed models via OpenRouter. Tool keys like `fs.writeFile` are now transformed to `fs_writeFile` transparently before requests.
 - Normalized sanitized tool names back to dotted originals in `safeToolWrapper` for clean logging and messages (e.g., `fs_writeFile` displays as `fs.writeFile`).
 
+## [1.1.12] - 2025-09-26
+
+### Fixed
+
+- Prevented provider context overflows that caused OpenRouter 400 errors ("maximum context length") by:
+  - Truncating large tool outputs globally in `safeToolWrapper` (caps for strings, arrays, objects, and depth)
+  - Capping `fs.listDir` results by default (returns up to 2000 items; hard max 5000; configurable via `limit`)
+  - Hardening `runAgent` error handling to avoid undefined `response` access and return a friendly message on provider errors
+
+### Notes
+
+- The truncation limits can be tuned via environment variables: `TOOL_MAX_STRING_CHARS`, `TOOL_MAX_ARRAY_ITEMS`, `TOOL_MAX_OBJECT_KEYS`.
+
+### Added
+
+- Google Calendar integration with OAuth and tools:
+  - `gcal.isLinked`, `gcal.linkAccount`, `gcal.unlinkAccount`
+  - `gcal.listCalendars`, `gcal.listEvents`, `gcal.createEvent`, `gcal.updateEvent`, `gcal.deleteEvent`, `gcal.quickAdd`
+  - Uses the same OAuth credentials as Google Drive (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`). Tokens stored at `~/.kalpana/gcal-token.json`.
+
 ## [1.1.0] - 2025-01-23
 
 ### Added

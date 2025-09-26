@@ -67,6 +67,7 @@ pDrive.linkAccount
 ```
 
 This will:
+
 - Start a callback server on port 44565
 - Provide you with an authorization URL
 - Open the URL in your browser to authorize access
@@ -116,7 +117,7 @@ pDrive.unlinkAccount
 
 ## Security Notes
 
-- **Token Storage**: OAuth tokens are stored locally in `.gdrive-token.json`
+- **Token Storage**: OAuth tokens are stored locally at `~/.kalpana/gdrive-token.json`
 - **Scopes**: The integration requests these permissions:
   - `https://www.googleapis.com/auth/drive` - Full Google Drive access
   - `https://www.googleapis.com/auth/drive.file` - Access to files created by the app
@@ -128,12 +129,15 @@ pDrive.unlinkAccount
 ### Common Issues
 
 1. **"googleapis module not found"**
+
    - Run `bun install` to install dependencies
 
 2. **"OAuth credentials not configured"**
+
    - Ensure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in `.env`
 
 3. **"Authorization failed"**
+
    - Check that redirect URI matches exactly: `http://localhost:44565/oauth/callback`
    - Ensure port 44565 is not in use by other applications
 
@@ -147,6 +151,7 @@ Set `DEBUG=1` in your environment to see detailed OAuth flow information.
 ## File Operations Examples
 
 ### Reading Google Docs
+
 ```bash
 # Find your document
 pDrive.searchFiles query:"My Important Document"
@@ -156,6 +161,7 @@ pDrive.readFile fileId:"1ABC123..." mimeType:"text/plain"
 ```
 
 ### Working with Spreadsheets
+
 ```bash
 # Find spreadsheet
 pDrive.listFiles query:"name contains 'budget'"
@@ -165,6 +171,7 @@ pDrive.readFile fileId:"1XYZ789..." mimeType:"text/csv"
 ```
 
 ### Creating Files
+
 ```bash
 # Create a text file
 pDrive.writeFile name:"analysis-results.txt" content:"Analysis complete..."
@@ -184,6 +191,7 @@ The Google Drive integration works seamlessly with other AI Container features:
 5. **Combine with web research** and other tools
 
 This enables powerful workflows like:
+
 - Analyzing documents stored in Google Drive
 - Creating reports based on Google Sheets data
 - Backing up analysis results to Google Drive

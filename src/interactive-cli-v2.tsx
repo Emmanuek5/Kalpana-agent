@@ -26,9 +26,11 @@ interface AppState {
   toolCalls: ToolCall[];
   selectedIndex: number;
   lastResponse: string;
+  reasoning?: string;
   errorMessage: string;
   mcpStatus: string;
   showMcpStatus: boolean;
+  showReasoning: boolean;
 }
 
 const getToolDescription = (
@@ -212,9 +214,11 @@ const App: React.FC = () => {
     toolCalls: [],
     selectedIndex: -1,
     lastResponse: "",
+    reasoning: undefined,
     errorMessage: "",
     mcpStatus: "",
     showMcpStatus: false,
+    showReasoning: false,
   });
 
   const initRef = useRef(false);
@@ -322,6 +326,11 @@ const App: React.FC = () => {
   // Handle keyboard input
   useInput((input, key) => {
     if (state.phase === "initializing" || state.phase === "processing") return;
+    // Toggle reasoning panel with 'r'
+    if (input.toLowerCase() === "r") {
+      setState((prev) => ({ ...prev, showReasoning: !prev.showReasoning }));
+      return;
+    }
 
     if (key.escape) {
       setState((prev) => ({ ...prev, phase: "exiting" }));
@@ -565,13 +574,18 @@ You can also ask questions or give instructions directly.`;
       setState((prev) => ({ ...prev, toolCalls: [] }));
 
       try {
-        const { text, messages } = await runAgent(value, state.history, true);
+        const { text, messages, reasoning } = await runAgent(
+          value,
+          state.history,
+          true
+        );
 
         setState((prev) => ({
           ...prev,
           phase: "ready",
           history: messages,
           lastResponse: text,
+          reasoning,
         }));
       } catch (error) {
         setState((prev) => ({
@@ -720,6 +734,26 @@ You can also ask questions or give instructions directly.`;
           flexShrink={0}
         >
           <MarkdownText text={state.lastResponse} />
+        </Box>
+      )}
+
+      {/* Reasoning (collapsible) */}
+      {state.reasoning && (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color="yellow" bold>
+              Reasoning
+            </Text>
+            <Text color="gray">
+              {" "}
+              (press 'r' to {state.showReasoning ? "hide" : "show"})
+            </Text>
+          </Box>
+          {state.showReasoning && (
+            <Box borderStyle="round" borderColor="yellow" padding={1}>
+              <Text>{state.reasoning}</Text>
+            </Box>
+          )}
         </Box>
       )}
 

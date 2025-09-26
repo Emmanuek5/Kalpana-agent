@@ -1,5 +1,74 @@
 import chalk from "chalk";
 import { toolCollector } from "../tool-collector";
+import { interactiveProgressTracker } from "../progress";
+
+// Global truncation settings for tool outputs to protect provider context limits
+const MAX_STRING_CHARS = parseInt(
+  process.env.TOOL_MAX_STRING_CHARS || "60000",
+  10
+);
+const MAX_ARRAY_ITEMS = parseInt(
+  process.env.TOOL_MAX_ARRAY_ITEMS || "1000",
+  10
+);
+const MAX_OBJECT_KEYS = parseInt(
+  process.env.TOOL_MAX_OBJECT_KEYS || "2000",
+  10
+);
+const MAX_TRUNCATION_DEPTH = 10;
+
+function truncateString(value: string): string {
+  if (typeof value !== "string") return value as unknown as string;
+  if (value.length <= MAX_STRING_CHARS) return value;
+  const omitted = value.length - MAX_STRING_CHARS;
+  return (
+    value.slice(0, MAX_STRING_CHARS) + `\n... [truncated ${omitted} chars]`
+  );
+}
+
+function truncateToolResult(
+  value: unknown,
+  depth: number = 0,
+  seen = new WeakSet<object>()
+): unknown {
+  if (value == null) return value;
+  if (depth > MAX_TRUNCATION_DEPTH) {
+    if (typeof value === "string") return truncateString(value);
+    if (Array.isArray(value)) return value.slice(0, 1);
+    if (typeof value === "object") return {}; // stop deep expansion
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return truncateString(value);
+  }
+
+  if (Array.isArray(value)) {
+    const limited = value
+      .slice(0, MAX_ARRAY_ITEMS)
+      .map((item) => truncateToolResult(item, depth + 1, seen));
+    return limited;
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    if (seen.has(obj)) return {}; // avoid cycles
+    seen.add(obj);
+
+    const result: Record<string, unknown> = {};
+    const keys = Object.keys(obj).slice(0, MAX_OBJECT_KEYS);
+    for (const key of keys) {
+      try {
+        result[key] = truncateToolResult(obj[key], depth + 1, seen);
+      } catch {
+        // ignore property errors
+      }
+    }
+    return result;
+  }
+
+  return value;
+}
 
 // Normalize provider-safe tool names back to display/original style for logs/UI.
 // Example: "fs_writeFile" -> "fs.writeFile", "docker_restartWithPorts" -> "docker.restartWithPorts",
@@ -13,6 +82,7 @@ function normalizeToolNameForDisplay(name: string): string {
     "browser",
     "sandbox",
     "notion",
+    "gcal",
     "pDrive",
     "gemini",
     "localScraper",
@@ -38,6 +108,25 @@ export function getToolStartMessage(
   const arg = args || {};
 
   switch (toolName) {
+    // Google Calendar tools
+    case "gcal.isLinked":
+      return `🔗 Checking Google Calendar account status`;
+    case "gcal.linkAccount":
+      return `🔗 Linking Google Calendar account`;
+    case "gcal.unlinkAccount":
+      return `🔓 Unlinking Google Calendar account`;
+    case "gcal.listCalendars":
+      return `📅 Listing Google Calendars`;
+    case "gcal.listEvents":
+      return `📆 Listing events ${chalk.cyan(arg.calendarId || "primary")}`;
+    case "gcal.createEvent":
+      return `📝 Creating event ${chalk.cyan(arg.summary || "event")}`;
+    case "gcal.updateEvent":
+      return `✏️  Updating event ${chalk.cyan(arg.eventId || "id")}`;
+    case "gcal.deleteEvent":
+      return `🗑️  Deleting event ${chalk.cyan(arg.eventId || "id")}`;
+    case "gcal.quickAdd":
+      return `⚡ Quick add calendar event`;
     case "edit.subAgentWrite":
       return `✏️  Editing ${chalk.cyan(
         arg.relativePath || "file"
@@ -294,6 +383,68 @@ export function getToolCompletionMessage(
   const arg = args || {};
 
   switch (toolName) {
+    // Google Calendar completions
+    case "gcal.isLinked":
+      if (result?.isLinked) {
+        return `✅ Google Calendar linked${
+          result?.email ? ` (${result.email})` : ""
+        }`;
+      }
+      return `❌ Google Calendar not linked`;
+    case "gcal.linkAccount":
+      if (result?.success && result?.authUrl) {
+        return `✅ Google Calendar OAuth started`;
+      }
+      return `❌ Failed to start Google Calendar OAuth`;
+    case "gcal.unlinkAccount":
+      if (result?.success) {
+        return `✅ Google Calendar account unlinked`;
+      }
+      return `❌ Failed to unlink Google Calendar account`;
+    case "gcal.listCalendars":
+      if (result?.success) {
+        const count =
+          result?.count ||
+          (Array.isArray(result?.calendars) ? result.calendars.length : 0);
+        return `✅ Listed Google Calendars - ${chalk.gray(
+          `${count} calendars`
+        )}`;
+      }
+      return `❌ Failed to list Google Calendars`;
+    case "gcal.listEvents":
+      if (result?.success) {
+        const count =
+          result?.count ||
+          (Array.isArray(result?.events) ? result.events.length : 0);
+        return `✅ Listed events - ${chalk.gray(`${count} events`)}`;
+      }
+      return `❌ Failed to list events`;
+    case "gcal.createEvent":
+      if (result?.success) {
+        return `✅ Event created ${
+          result?.eventId ? `- ${chalk.gray(result.eventId)}` : ""
+        }`;
+      }
+      return `❌ Failed to create event`;
+    case "gcal.updateEvent":
+      if (result?.success) {
+        return `✅ Event updated ${
+          result?.eventId ? `- ${chalk.gray(result.eventId)}` : ""
+        }`;
+      }
+      return `❌ Failed to update event`;
+    case "gcal.deleteEvent":
+      if (result?.success) {
+        return `✅ Event deleted`;
+      }
+      return `❌ Failed to delete event`;
+    case "gcal.quickAdd":
+      if (result?.success) {
+        return `✅ Quick added event ${
+          result?.eventId ? `- ${chalk.gray(result.eventId)}` : ""
+        }`;
+      }
+      return `❌ Failed to quick add event`;
     case "edit.subAgentWrite":
       if (result?.success) {
         const filename = arg.relativePath || "file";
@@ -928,6 +1079,20 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
       .substr(2, 9)}`;
 
     toolCollector.startExecution(executionId, toolName, args[0] || args);
+    // Emit interactive progress start so the UI can show running tools
+    try {
+      interactiveProgressTracker.startProgress(
+        executionId,
+        displayName,
+        args[0] || args
+      );
+    } catch {}
+
+    // Optionally log a concise start message (useful outside interactive UI)
+    const startMessage = getToolStartMessage(displayName, args[0] || args);
+    if (startMessage) {
+      console.log(chalk.blue(startMessage));
+    }
 
     try {
       const result = toolFn(...args);
@@ -935,20 +1100,31 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
       if (result && typeof (result as any).then === "function") {
         return (result as Promise<any>)
           .then((res: any) => {
-            toolCollector.completeExecution(executionId, res);
+            const safeRes = truncateToolResult(res);
+            toolCollector.completeExecution(executionId, safeRes);
+            // Notify interactive tracker of completion
+            try {
+              interactiveProgressTracker.finishProgress(executionId, safeRes);
+            } catch {}
             // Show only the completion message to save space
             const completionMessage = getToolCompletionMessage(
               displayName,
               args[0] || args,
-              res
+              safeRes
             );
             if (completionMessage) {
               console.log(chalk.green(completionMessage));
             }
-            return res;
+            return safeRes;
           })
           .catch((error: Error) => {
             toolCollector.failExecution(executionId, error);
+            try {
+              interactiveProgressTracker.finishProgress(executionId, {
+                success: false,
+                error: error.message,
+              });
+            } catch {}
             console.error(
               chalk.red(`Tool error [${displayName}]: ${error.message}`)
             );
@@ -962,18 +1138,28 @@ export function createSafeToolWrapper<T extends (...args: any[]) => any>(
       }
 
       // For synchronous operations, just show the final message
-      toolCollector.completeExecution(executionId, result);
+      const safeSyncRes = truncateToolResult(result);
+      toolCollector.completeExecution(executionId, safeSyncRes);
+      try {
+        interactiveProgressTracker.finishProgress(executionId, safeSyncRes);
+      } catch {}
       const completionMessage = getToolCompletionMessage(
         displayName,
         args[0] || args,
-        result
+        safeSyncRes
       );
       if (completionMessage) {
         console.log(chalk.green(completionMessage));
       }
-      return result;
+      return safeSyncRes;
     } catch (error) {
       toolCollector.failExecution(executionId, error as Error);
+      try {
+        interactiveProgressTracker.finishProgress(executionId, {
+          success: false,
+          error: (error as Error).message,
+        });
+      } catch {}
       console.error(
         chalk.red(`Tool error [${displayName}]: ${(error as Error).message}`)
       );

@@ -124,6 +124,7 @@ export async function runAgent(
     ...buildHyperAgentTools(),
     ...buildHyperbrowserTools(),
     ...buildGDriveTools(),
+    ...(await import("./tools/gcal")).buildGCalTools(),
     ...buildGeminiTools(),
     ...buildNotionTools(),
     ...buildErrorCheckTools(),
@@ -150,16 +151,56 @@ export async function runAgent(
     // Add provider-specific options
     if (aiProviderType === "openrouter") {
       generateOptions.providerOptions = {
-        openrouter: { include_reasoning: false },
+        // Request provider reasoning when supported (OpenRouter)
+        openrouter: { include_reasoning: true },
       };
     }
 
     result = await generateText(generateOptions);
   } catch (error) {
-    console.log(error);
+    const err = error as any;
+    const providerMsg =
+      err?.data?.error?.message || err?.message || "Unknown provider error";
+    const friendly = providerMsg.includes("maximum context length")
+      ? "The request exceeded the model's context window. I've enabled aggressive truncation for tool outputs and will keep listings/results concise. Please try your request again with narrower scope if listing huge folders."
+      : providerMsg;
+
+    // Return a safe fallback response and preserve message history
+    return {
+      text: `⚠️ Agent error: ${friendly}`,
+      reasoning: undefined,
+      messages: [
+        ...history,
+        { role: "user", content: userInstruction },
+        { role: "assistant", content: `Error: ${friendly}` },
+      ] as ModelMessage[],
+    };
   }
 
-  const responseMessages = (result as any).response?.messages as
+  // Best-effort extraction of provider reasoning across providers
+  const extractReasoning = (r: any): string | undefined => {
+    try {
+      // Common locations to attempt
+      if (typeof r?.reasoning === "string") return r.reasoning;
+      if (typeof r?.response?.reasoning === "string")
+        return r.response.reasoning;
+      // Some providers may attach to the last assistant message
+      const msgs = r?.response?.messages;
+      if (Array.isArray(msgs)) {
+        const lastAssistant = [...msgs]
+          .reverse()
+          .find((m: any) => m?.role === "assistant");
+        if (typeof lastAssistant?.reasoning === "string")
+          return lastAssistant.reasoning;
+        if (typeof lastAssistant?.metadata?.reasoning === "string")
+          return lastAssistant.metadata.reasoning;
+      }
+    } catch {}
+    return undefined;
+  };
+  const reasoning = extractReasoning(result);
+
+  const responseMessages = (result as any)?.response?.messages as
     | ModelMessage[]
     | undefined;
   if (
@@ -178,6 +219,7 @@ export async function runAgent(
     // Append the new user message and provider assistant/tool messages to existing history
     return {
       text: result.text,
+      reasoning,
       messages: [
         ...history,
         { role: "user", content: userInstruction },
@@ -188,6 +230,7 @@ export async function runAgent(
   // Fallback: append a simple assistant response
   return {
     text: result.text,
+    reasoning,
     messages: [
       ...history,
       { role: "user", content: userInstruction },
