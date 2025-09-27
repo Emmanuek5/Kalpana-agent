@@ -82,6 +82,9 @@ function normalizeToolNameForDisplay(name: string): string {
     "browser",
     "sandbox",
     "notion",
+    "gmail",
+    "sheets",
+    "gdocs",
     "gcal",
     "pDrive",
     "gemini",
@@ -108,6 +111,42 @@ export function getToolStartMessage(
   const arg = args || {};
 
   switch (toolName) {
+    // Sheets / Docs start messages
+    case "sheets.isLinked":
+      return `🔗 Checking Google Workspace link`;
+    case "sheets.linkAccount":
+      return `🔗 Linking Google Workspace (Sheets/Docs)`;
+    case "sheets.unlinkAccount":
+      return `🔓 Unlinking Google Workspace`;
+    case "sheets.readRange":
+      return `📄 Reading range ${chalk.cyan(arg.range || "range")} from sheet`;
+    case "sheets.writeRange":
+      return `✏️  Writing range ${chalk.cyan(arg.range || "range")} to sheet`;
+    case "sheets.appendRows":
+      return `➕ Appending rows to ${chalk.cyan(arg.range || "range")}`;
+    case "sheets.createSpreadsheet":
+      return `📗 Creating spreadsheet ${chalk.cyan(arg.title || "title")}`;
+    case "gdocs.createDocument":
+      return `📄 Creating Google Doc ${chalk.cyan(arg.title || "title")}`;
+    case "gdocs.getDocument":
+      return `📖 Getting Google Doc ${chalk.cyan(arg.documentId || "id")}`;
+    case "gdocs.batchUpdate":
+      return `🛠️  Updating Google Doc ${chalk.cyan(arg.documentId || "id")}`;
+    // Gmail tools start messages
+    case "gmail.isLinked":
+      return `🔗 Checking Gmail account status`;
+    case "gmail.linkAccount":
+      return `🔗 Linking Gmail account`;
+    case "gmail.unlinkAccount":
+      return `🔓 Unlinking Gmail account`;
+    case "gmail.listLabels":
+      return `🏷️ Listing Gmail labels`;
+    case "gmail.listMessages":
+      return `📬 Listing Gmail messages`;
+    case "gmail.getMessage":
+      return `📖 Getting Gmail message ${chalk.cyan(arg.id || "id")}`;
+    case "gmail.sendMessage":
+      return `✉️  Sending email to ${chalk.cyan(arg.to || "recipient")}`;
     // Google Calendar tools
     case "gcal.isLinked":
       return `🔗 Checking Google Calendar account status`;
@@ -383,6 +422,77 @@ export function getToolCompletionMessage(
   const arg = args || {};
 
   switch (toolName) {
+    // Sheets / Docs completion messages
+    case "sheets.isLinked":
+      return result?.isLinked
+        ? `✅ Workspace linked${result?.email ? ` (${result.email})` : ""}`
+        : `❌ Workspace not linked`;
+    case "sheets.linkAccount":
+      return result?.success
+        ? `✅ Workspace OAuth started`
+        : `❌ Failed to start Workspace OAuth`;
+    case "sheets.unlinkAccount":
+      return result?.success
+        ? `✅ Workspace unlinked`
+        : `❌ Failed to unlink Workspace`;
+    case "sheets.readRange":
+      return result?.success
+        ? `✅ Range read - ${chalk.gray(
+            `${(result.values || []).length} rows`
+          )}`
+        : `❌ Failed to read range`;
+    case "sheets.writeRange":
+      return result?.success
+        ? `✅ Range written - ${chalk.gray(`${result.updated || 0} cells`)}`
+        : `❌ Failed to write range`;
+    case "sheets.appendRows":
+      return result?.success ? `✅ Rows appended` : `❌ Failed to append rows`;
+    case "sheets.createSpreadsheet":
+      return result?.success
+        ? `✅ Spreadsheet created`
+        : `❌ Failed to create spreadsheet`;
+    case "gdocs.createDocument":
+      return result?.success
+        ? `✅ Google Doc created`
+        : `❌ Failed to create Google Doc`;
+    case "gdocs.getDocument":
+      return result?.success
+        ? `✅ Google Doc retrieved`
+        : `❌ Failed to get Google Doc`;
+    case "gdocs.batchUpdate":
+      return result?.success
+        ? `✅ Google Doc updated`
+        : `❌ Failed to update Google Doc`;
+    // Gmail completion messages
+    case "gmail.isLinked":
+      if (result?.isLinked)
+        return `✅ Gmail linked${result?.email ? ` (${result.email})` : ""}`;
+      return `❌ Gmail not linked`;
+    case "gmail.linkAccount":
+      if (result?.success && result?.authUrl) return `✅ Gmail OAuth started`;
+      return `❌ Failed to start Gmail OAuth`;
+    case "gmail.unlinkAccount":
+      return result?.success
+        ? `✅ Gmail account unlinked`
+        : `❌ Failed to unlink Gmail account`;
+    case "gmail.listLabels":
+      if (result?.success)
+        return `✅ Listed Gmail labels - ${chalk.gray(
+          `${result?.count || 0} labels`
+        )}`;
+      return `❌ Failed to list Gmail labels`;
+    case "gmail.listMessages":
+      if (result?.success)
+        return `✅ Listed Gmail messages - ${chalk.gray(
+          `${result?.count || 0} messages`
+        )}`;
+      return `❌ Failed to list Gmail messages`;
+    case "gmail.getMessage":
+      return result?.success
+        ? `✅ Retrieved Gmail message`
+        : `❌ Failed to get Gmail message`;
+    case "gmail.sendMessage":
+      return result?.success ? `✅ Email sent` : `❌ Failed to send email`;
     // Google Calendar completions
     case "gcal.isLinked":
       if (result?.isLinked) {

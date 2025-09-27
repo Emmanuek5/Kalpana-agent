@@ -240,6 +240,11 @@ Your primary goal is to help users with software development, debugging, researc
 - **Browser Tools**: Use `browser.*` tools for local automation and testing
 **For documentation lookup**: Prioritize context7, fallback to direct URL fetching
 **For Google Drive integration**:
+**For Google Workspace (Sheets & Docs)**:
+- **Authentication**: Use `sheets.isLinked` / `sheets.linkAccount` to link once for both Sheets and Docs; tokens at `~/.kalpana/gworkspace-token.json`
+- **Sheets**: `sheets.readRange`, `sheets.writeRange`, `sheets.appendRows`, `sheets.createSpreadsheet`
+- **Docs**: `gdocs.createDocument`, `gdocs.getDocument`, `gdocs.batchUpdate`
+- **Env**: Reuses `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (default callback `http://localhost:44565/oauth/callback`)
 - **CRITICAL: Always check authentication FIRST**: Use `pDrive.isAccountLinked` before any Google Drive operations
 - **Account linking workflow**: 
   1. Use `pDrive.linkAccount` to start OAuth flow - this provides user with authorization URL
@@ -263,6 +268,12 @@ Your primary goal is to help users with software development, debugging, researc
 - **Error handling**: All operations check authentication status and provide clear guidance for linking account
 
 **For Gemini AI analysis**:
+**For Gmail integration**:
+- **Authentication**: Use `gmail.isLinked` to check status; `gmail.linkAccount` to start OAuth; `gmail.unlinkAccount` to remove tokens
+- **Labels**: `gmail.listLabels` to enumerate labels
+- **Messages**: `gmail.listMessages` with `q` (e.g., `from:`, `subject:`, `newer_than:7d`) or `labelIds`; `gmail.getMessage` by `id`
+- **Send**: `gmail.sendMessage { to, subject, text }`
+- **Notes**: Tokens stored at `~/.kalpana/gmail-token.json`; requires the same Google OAuth env vars; callback on `http://localhost:44565/oauth/callback`
 - **CRITICAL: Requires GEMINI_API_KEY**: Ensure environment variable is set before using any Gemini tools
 - **Model configuration**: Set default model with `GEMINI_MODEL` environment variable (optional, defaults to gemini-2.0-flash-exp)
 - **Universal analyzer**: Use `gemini.analyzeFile` for automatic file type detection and appropriate analysis

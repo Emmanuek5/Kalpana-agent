@@ -25,9 +25,21 @@ All notable changes to AI Container will be documented in this file.
 ### Added
 
 - Google Calendar integration with OAuth and tools:
+
   - `gcal.isLinked`, `gcal.linkAccount`, `gcal.unlinkAccount`
   - `gcal.listCalendars`, `gcal.listEvents`, `gcal.createEvent`, `gcal.updateEvent`, `gcal.deleteEvent`, `gcal.quickAdd`
   - Uses the same OAuth credentials as Google Drive (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`). Tokens stored at `~/.kalpana/gcal-token.json`.
+
+- Gmail integration with OAuth and tools:
+
+  - `gmail.isLinked`, `gmail.linkAccount`, `gmail.unlinkAccount`
+  - `gmail.listLabels`, `gmail.listMessages`, `gmail.getMessage`, `gmail.sendMessage`
+  - Uses the same OAuth credentials; tokens stored at `~/.kalpana/gmail-token.json`.
+
+- Google Workspace (Sheets & Docs): single OAuth linking shared across services
+  - Sheets: `sheets.isLinked`, `sheets.linkAccount`, `sheets.unlinkAccount`, `sheets.readRange`, `sheets.writeRange`, `sheets.appendRows`, `sheets.createSpreadsheet`
+  - Docs: `gdocs.createDocument`, `gdocs.getDocument`, `gdocs.batchUpdate`
+  - Token stored at `~/.kalpana/gworkspace-token.json`.
 
 ## [1.1.0] - 2025-01-23
 

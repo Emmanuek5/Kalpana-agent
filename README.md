@@ -417,6 +417,8 @@ bun run start --sandbox ../shared-workspace
 - **[Gemini AI Integration](./README-Gemini.md)** - Complete guide for multi-modal file analysis
 - **[Google Drive Integration](./README-GoogleDrive.md)** - Setup and usage for cloud file operations
 - **[Google Calendar Integration](./README-GoogleCalendar.md)** - Setup and usage for calendar operations (link account, list/create/update/delete events)
+- **[Gmail Integration](./README-Gmail.md)** - Setup and usage for email operations (link account, list/read/send)
+- **[Google Workspace (Sheets & Docs)](./README-GoogleWorkspace.md)** - Link once for Sheets and Docs; read/write ranges, batch update documents
 - **[Docker Setup](./README-Docker.md)** - Custom container configuration
 
 ---
